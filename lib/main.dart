@@ -129,7 +129,7 @@ class _HomePageState extends State<HomePage> {
                             color: Colors.black.withValues(alpha: 0.2),
                             borderRadius: BorderRadius.circular(18),
                           ),
-                          child: const Row(
+                          child: Row(
                             children: [
                               Icon(Icons.access_time_rounded, color: gold, size: 26),
                               SizedBox(width: 12),
