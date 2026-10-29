@@ -136,6 +136,67 @@ jobs:
           print(f"Configured compile SDK in {file}")
           PY
 
+      - name: Enable Android core library desugaring
+        working-directory: extracted
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          candidates = [
+              Path("android/app/build.gradle.kts"),
+              Path("android/app/build.gradle"),
+          ]
+          file = next((p for p in candidates if p.exists()), None)
+          if file is None:
+              raise SystemExit("Android app Gradle file not found")
+
+          text = file.read_text()
+
+          if file.suffix == ".kts":
+              if "isCoreLibraryDesugaringEnabled" not in text:
+                  text, count = re.subn(
+                      r'compileOptions\s*\{',
+                      'compileOptions {\n'
+                      '        isCoreLibraryDesugaringEnabled = true',
+                      text,
+                      count=1,
+                  )
+                  if count == 0:
+                      raise SystemExit("compileOptions block not found")
+
+              if "coreLibraryDesugaring(" not in text:
+                  text += (
+                      '\n\ndependencies {\n'
+                      '    coreLibraryDesugaring('
+                      '"com.android.tools:desugar_jdk_libs:2.1.5")\n'
+                      '}\n'
+                  )
+          else:
+              if "coreLibraryDesugaringEnabled" not in text:
+                  text, count = re.subn(
+                      r'compileOptions\s*\{',
+                      'compileOptions {\n'
+                      '        coreLibraryDesugaringEnabled true',
+                      text,
+                      count=1,
+                  )
+                  if count == 0:
+                      raise SystemExit("compileOptions block not found")
+
+              if "coreLibraryDesugaring " not in text:
+                  text += (
+                      '\n\ndependencies {\n'
+                      '    coreLibraryDesugaring '
+                      '"com.android.tools:desugar_jdk_libs:2.1.5"\n'
+                      '}\n'
+                  )
+
+          file.write_text(text)
+          print(f"Enabled core library desugaring in {file}")
+          PY
+
       - name: Get dependencies
         working-directory: extracted
         run: flutter pub get
