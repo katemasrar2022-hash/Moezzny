@@ -74,22 +74,15 @@ jobs:
           p = Path("android/app/src/main/AndroidManifest.xml")
           text = p.read_text()
 
+          
           permissions = [
               '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />',
               '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />',
+              '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',
+              '    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />',
+              '    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />',
           ]
 
-          for permission in permissions:
-              if permission not in text:
-                  text = text.replace(
-                      "<application",
-                      permission + "\n    <application",
-                      1
-                  )
-
-          p.write_text(text)
-          print("Location permissions configured")
-          PY
 
       - name: Configure Android SDK
         working-directory: extracted
