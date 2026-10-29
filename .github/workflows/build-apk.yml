@@ -7,7 +7,7 @@ on:
     paths:
       - "Moezzny_Flutter_Starter.zip"
       - ".github/workflows/build-apk.yml"
-
+      - "lib/main.dart"  
 permissions:
   contents: read
 
@@ -44,7 +44,15 @@ jobs:
       - name: Generate Android platform
         working-directory: extracted
         run: flutter create --platforms=android --project-name moezzny .
-
+      - name: Use repository source override
+        shell: bash
+        run: |
+          if [ -f lib/main.dart ]; then
+            cp lib/main.dart extracted/lib/main.dart
+            echo "Using repository lib/main.dart"
+          else
+            echo "No override found; using ZIP source"
+          fi
       - name: Configure Android SDK
         working-directory: extracted
         shell: bash
