@@ -44,6 +44,7 @@ jobs:
       - name: Generate Android platform
         working-directory: extracted
         run: flutter create --platforms=android --project-name moezzny .
+      
       - name: Use repository source override
         shell: bash
         run: |
@@ -53,6 +54,39 @@ jobs:
           else
             echo "No override found; using ZIP source"
           fi
+
+      - name: Add prayer and location packages
+        working-directory: extracted
+        run: flutter pub add geolocator egyptian_prayer_times
+
+  
+      - name: Add location permissions
+        working-directory: extracted
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("android/app/src/main/AndroidManifest.xml")
+          text = p.read_text()
+
+          permissions = [
+              '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />',
+              '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />',
+          ]
+
+          for permission in permissions:
+              if permission not in text:
+                  text = text.replace(
+                      "<application",
+                      permission + "\n    <application",
+                      1
+                  )
+
+          p.write_text(text)
+          print("Location permissions configured")
+          PY
+
       - name: Configure Android SDK
         working-directory: extracted
         shell: bash
