@@ -105,6 +105,7 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
+  
   Future<void> loadPrayerTimes() async {
     try {
       final serviceEnabled =
@@ -137,7 +138,6 @@ class _HomePageState extends State<HomePage> {
       longitude = position.longitude;
 
       refreshPrayerTimes();
-    
     } catch (e, stackTrace) {
       debugPrint('MOEZZNY LOCATION ERROR: $e');
       debugPrint('MOEZZNY LOCATION STACK: $stackTrace');
@@ -146,42 +146,8 @@ class _HomePageState extends State<HomePage> {
         'خطأ تحديد الموقع: $e',
       );
     }
-  void updateLocationMessage(String message) {
-    if (!mounted) return;
-
-    setState(() {
-      loadingPrayerTimes = false;
-      locationMessage = message;
-    });
   }
 
-  void refreshPrayerTimes() {
-    if (latitude == null || longitude == null) return;
-
-    try {
-      final calculator = PrayerCalculator.withLocalTimezone(
-        latitude: latitude!,
-        longitude: longitude!,
-        asrMethod: AsrMethod.standard,
-      );
-
-      final times = calculator.calculate();
-      final upcoming = times.getNextPrayerName();
-      final upcomingTime = times.getNextPrayer();
-
-      if (!mounted) return;
-
-      setState(() {
-        prayerTimes = times;
-        nextPrayer = upcoming;
-        nextPrayerTime = upcomingTime;
-        loadingPrayerTimes = false;
-        locationMessage = 'تم تحديد موقعك وحساب المواقيت';
-      });
-    } catch (_) {
-      updateLocationMessage('تعذر حساب المواقيت حاليًا.');
-    }
-  }
 
   String formatPrayerTime(DateTime? time) {
     if (time == null) return '--:--';
