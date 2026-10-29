@@ -1,0 +1,106 @@
+
+name: Moezzny Android Build
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "Moezzny_Flutter_Starter.zip"
+      - ".github/workflows/build-apk.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Extract project ZIP
+        shell: bash
+        run: |
+          set -e
+          test -f Moezzny_Flutter_Starter.zip
+          mkdir -p extracted
+          unzip -o Moezzny_Flutter_Starter.zip -d extracted
+          test -f extracted/pubspec.yaml
+          echo "PROJECT_DIR=$GITHUB_WORKSPACE/extracted" >> "$GITHUB_ENV"
+
+      - name: Generate Android platform
+        working-directory: extracted
+        run: flutter create --platforms=android --project-name moezzny .
+
+      - name: Configure Android SDK
+        working-directory: extracted
+        shell: bash
+        run: |
+          set -e
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          candidates = [
+              Path("android/app/build.gradle.kts"),
+              Path("android/app/build.gradle"),
+          ]
+          file = next((p for p in candidates if p.exists()), None)
+          if file is None:
+              raise SystemExit("Android app Gradle file not found")
+
+          text = file.read_text()
+          if file.suffix == ".kts":
+              updated, count = re.subn(
+                  r"(?m)^(\s*)compileSdk\s*=\s*.*$",
+                  r"\g<1>compileSdk = 36",
+                  text,
+                  count=1,
+              )
+              if count == 0:
+                  updated, count = re.subn(
+                      r"(?m)^(\s*)compileSdk\s+.*$",
+                      r"\g<1>compileSdk = 36",
+                      text,
+                      count=1,
+                  )
+          else:
+              updated, count = re.subn(
+                  r"(?m)^(\s*)compileSdk(?:Version)?\s+.*$",
+                  r"\g<1>compileSdkVersion 36",
+                  text,
+                  count=1,
+              )
+          if count == 0:
+              raise SystemExit("Could not locate compileSdk setting")
+          file.write_text(updated)
+          print(f"Configured compile SDK in {file}")
+          PY
+
+      - name: Get dependencies
+        working-directory: extracted
+        run: flutter pub get
+
+      - name: Build release APK
+        working-directory: extracted
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Moezzny-Android-APK
+          path: extracted/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
