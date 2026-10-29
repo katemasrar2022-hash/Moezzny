@@ -139,7 +139,19 @@ class _HomePageState extends State<HomePage> {
                                   children: [
                                     Text('الصلاة القادمة', style: TextStyle(color: muted, fontSize: 12)),
                                     SizedBox(height: 5),
-                                    Text('سيتم تحديدها حسب موقعك', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
+                                    Text(
+  prayerTimes == null
+      ? locationMessage
+      : '${arabicPrayerName(nextPrayer)} - '
+          '${formatPrayerTime(
+            prayerTimes!.getNextPrayer() ?? prayerTimes!.fajr,
+          )}',
+  style: const TextStyle(
+    color: Colors.white,
+    fontSize: 15,
+    fontWeight: FontWeight.w600,
+  ),
+),
                                   ],
                                 ),
                               ),
