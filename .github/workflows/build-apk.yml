@@ -60,6 +60,10 @@ jobs:
         run: flutter pub add geolocator egyptian_prayer_times
 
   
+      - name: Add notification packages
+        working-directory: extracted
+        run: flutter pub add flutter_local_notifications timezone flutter_timezone
+
       - name: Add location permissions
         working-directory: extracted
         shell: bash
