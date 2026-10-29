@@ -1,5 +1,9 @@
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:egyptian_prayer_times/egyptian_prayer_times.dart';
 
 void main() {
   runApp(const MoezznyApp());
@@ -43,14 +47,176 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   int selectedTab = 0;
 
+  PrayerTimes? prayerTimes;
+  PrayerName? nextPrayer;
+  DateTime? nextPrayerTime;
+  bool loadingPrayerTimes = true;
+  String locationMessage = 'جارٍ تحديد موقعك...';
+  double? latitude;
+  double? longitude;
+  Timer? prayerTimer;
+
   final List<Map<String, dynamic>> features = [
-    {'icon': Icons.menu_book_rounded, 'title': 'القرآن الكريم', 'sub': 'وردك اليومي'},
-    {'icon': Icons.explore_rounded, 'title': 'القبلة', 'sub': 'اتجاه القبلة'},
-    {'icon': Icons.favorite_rounded, 'title': 'الأذكار', 'sub': 'حصن المسلم'},
-    {'icon': Icons.calendar_month_rounded, 'title': 'التقويم الهجري', 'sub': 'المناسبات الإسلامية'},
-    {'icon': Icons.mosque_rounded, 'title': 'المساجد', 'sub': 'المساجد القريبة'},
-    {'icon': Icons.notifications_active_rounded, 'title': 'التنبيهات', 'sub': 'إعدادات الأذان'},
+    {
+      'icon': Icons.menu_book_rounded,
+      'title': 'القرآن الكريم',
+      'sub': 'وردك اليومي'
+    },
+    {
+      'icon': Icons.explore_rounded,
+      'title': 'القبلة',
+      'sub': 'اتجاه القبلة'
+    },
+    {
+      'icon': Icons.favorite_rounded,
+      'title': 'الأذكار',
+      'sub': 'حصن المسلم'
+    },
+    {
+      'icon': Icons.calendar_month_rounded,
+      'title': 'التقويم الهجري',
+      'sub': 'المناسبات الإسلامية'
+    },
+    {
+      'icon': Icons.mosque_rounded,
+      'title': 'المساجد',
+      'sub': 'المساجد القريبة'
+    },
+    {
+      'icon': Icons.notifications_active_rounded,
+      'title': 'التنبيهات',
+      'sub': 'إعدادات الأذان'
+    },
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    loadPrayerTimes();
+    prayerTimer = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => refreshPrayerTimes(),
+    );
+  }
+
+  @override
+  void dispose() {
+    prayerTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> loadPrayerTimes() async {
+    try {
+      final serviceEnabled =
+          await Geolocator.isLocationServiceEnabled();
+
+      if (!serviceEnabled) {
+        updateLocationMessage(
+          'فعّل خدمة الموقع GPS ثم أعد المحاولة',
+        );
+        return;
+      }
+
+      var permission = await Geolocator.checkPermission();
+
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        updateLocationMessage(
+          'اسمح لمؤذني بالوصول إلى الموقع لحساب المواقيت',
+        );
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition();
+
+      latitude = position.latitude;
+      longitude = position.longitude;
+
+      refreshPrayerTimes();
+    } catch (_) {
+      updateLocationMessage(
+        'تعذر تحديد الموقع. تحقق من GPS وحاول مجددًا.',
+      );
+    }
+  }
+
+  void updateLocationMessage(String message) {
+    if (!mounted) return;
+
+    setState(() {
+      loadingPrayerTimes = false;
+      locationMessage = message;
+    });
+  }
+
+  void refreshPrayerTimes() {
+    if (latitude == null || longitude == null) return;
+
+    try {
+      final calculator = PrayerCalculator.withLocalTimezone(
+        latitude: latitude!,
+        longitude: longitude!,
+        asrMethod: AsrMethod.standard,
+      );
+
+      final times = calculator.calculate();
+      final upcoming = times.getNextPrayerName();
+      final upcomingTime = times.getNextPrayer();
+
+      if (!mounted) return;
+
+      setState(() {
+        prayerTimes = times;
+        nextPrayer = upcoming;
+        nextPrayerTime = upcomingTime;
+        loadingPrayerTimes = false;
+        locationMessage = 'تم تحديد موقعك وحساب المواقيت';
+      });
+    } catch (_) {
+      updateLocationMessage('تعذر حساب المواقيت حاليًا.');
+    }
+  }
+
+  String formatPrayerTime(DateTime? time) {
+    if (time == null) return '--:--';
+
+    final hour = time.hour % 12 == 0 ? 12 : time.hour % 12;
+    final minute = time.minute.toString().padLeft(2, '0');
+    final period = time.hour >= 12 ? 'م' : 'ص';
+
+    return '$hour:$minute $period';
+  }
+
+  String arabicPrayerName(PrayerName? prayer) {
+    switch (prayer) {
+      case PrayerName.fajr:
+        return 'الفجر';
+      case PrayerName.dhuhr:
+        return 'الظهر';
+      case PrayerName.asr:
+        return 'العصر';
+      case PrayerName.maghrib:
+        return 'المغرب';
+      case PrayerName.isha:
+        return 'العشاء';
+      case null:
+        return 'جارٍ الحساب';
+    }
+  }
+
+  void message(String text) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(text, textDirection: TextDirection.rtl),
+        backgroundColor: panel,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -71,24 +237,49 @@ class _HomePageState extends State<HomePage> {
                         decoration: BoxDecoration(
                           color: gold.withValues(alpha: 0.14),
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: gold.withValues(alpha: 0.4)),
+                          border: Border.all(
+                            color: gold.withValues(alpha: 0.4),
+                          ),
                         ),
-                        child: const Icon(Icons.mosque_rounded, color: gold, size: 28),
+                        child: const Icon(
+                          Icons.mosque_rounded,
+                          color: gold,
+                          size: 28,
+                        ),
                       ),
                       const SizedBox(width: 12),
                       const Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('مُؤذني', style: TextStyle(fontSize: 25, fontWeight: FontWeight.bold, color: Colors.white)),
+                            Text(
+                              'مُؤذني',
+                              style: TextStyle(
+                                fontSize: 25,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
                             SizedBox(height: 3),
-                            Text('رفيقك في كل صلاة', style: TextStyle(color: muted, fontSize: 13)),
+                            Text(
+                              'رفيقك في كل صلاة',
+                              style: TextStyle(
+                                color: muted,
+                                fontSize: 13,
+                              ),
+                            ),
                           ],
                         ),
                       ),
                       IconButton(
-                        onPressed: () => _message('الإشعارات ستتوفر مع إعدادات الأذان.'),
-                        icon: const Icon(Icons.notifications_none_rounded, color: gold, size: 28),
+                        onPressed: () => message(
+                          'إعدادات التنبيهات والأذان ستُفعّل في مرحلة لاحقة.',
+                        ),
+                        icon: const Icon(
+                          Icons.notifications_none_rounded,
+                          color: gold,
+                          size: 28,
+                        ),
                       ),
                     ],
                   ),
@@ -101,27 +292,55 @@ class _HomePageState extends State<HomePage> {
                     padding: const EdgeInsets.all(22),
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
-                        colors: [Color(0xFF202F49), Color(0xFF111A2B)],
+                        colors: [
+                          Color(0xFF202F49),
+                          Color(0xFF111A2B),
+                        ],
                         begin: Alignment.topRight,
                         end: Alignment.bottomLeft,
                       ),
                       borderRadius: BorderRadius.circular(26),
-                      border: Border.all(color: gold.withValues(alpha: 0.3)),
+                      border: Border.all(
+                        color: gold.withValues(alpha: 0.3),
+                      ),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Row(
                           children: [
-                            Icon(Icons.wb_twilight_rounded, color: gold, size: 24),
+                            Icon(
+                              Icons.wb_twilight_rounded,
+                              color: gold,
+                              size: 24,
+                            ),
                             SizedBox(width: 8),
-                            Text('السَّلامُ عَلَيْكُم', style: TextStyle(color: gold, fontSize: 15)),
+                            Text(
+                              'السَّلامُ عَلَيْكُم',
+                              style: TextStyle(
+                                color: gold,
+                                fontSize: 15,
+                              ),
+                            ),
                           ],
                         ),
                         const SizedBox(height: 18),
-                        const Text('حافظ على صلاتك', style: TextStyle(fontSize: 25, fontWeight: FontWeight.bold, color: Colors.white)),
+                        const Text(
+                          'حافظ على صلاتك',
+                          style: TextStyle(
+                            fontSize: 25,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
                         const SizedBox(height: 8),
-                        const Text('اجعل صلاتك وذكرك نور يومك.', style: TextStyle(fontSize: 14, color: muted)),
+                        const Text(
+                          'اجعل صلاتك وذكرك نور يومك.',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: muted,
+                          ),
+                        ),
                         const SizedBox(height: 22),
                         Container(
                           padding: const EdgeInsets.all(15),
@@ -131,34 +350,68 @@ class _HomePageState extends State<HomePage> {
                           ),
                           child: Row(
                             children: [
-                              Icon(Icons.access_time_rounded, color: gold, size: 26),
-                              SizedBox(width: 12),
+                              const Icon(
+                                Icons.access_time_rounded,
+                                color: gold,
+                                size: 26,
+                              ),
+                              const SizedBox(width: 12),
                               Expanded(
                                 child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
                                   children: [
-                                    Text('الصلاة القادمة', style: TextStyle(color: muted, fontSize: 12)),
-                                    SizedBox(height: 5),
+                                    const Text(
+                                      'الصلاة القادمة',
+                                      style: TextStyle(
+                                        color: muted,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 5),
                                     Text(
-  prayerTimes == null
-      ? locationMessage
-      : '${arabicPrayerName(nextPrayer)} - '
-          '${formatPrayerTime(
-            prayerTimes!.getNextPrayer() ?? prayerTimes!.fajr,
-          )}',
-  style: const TextStyle(
-    color: Colors.white,
-    fontSize: 15,
-    fontWeight: FontWeight.w600,
-  ),
-),
+                                      prayerTimes == null
+                                          ? locationMessage
+                                          : '${arabicPrayerName(nextPrayer)} - '
+                                              '${formatPrayerTime(nextPrayerTime)}',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
                                   ],
                                 ),
                               ),
-                              Icon(Icons.arrow_back_ios_new_rounded, color: gold, size: 16),
+                              const Icon(
+                                Icons.arrow_back_ios_new_rounded,
+                                color: gold,
+                                size: 16,
+                              ),
                             ],
                           ),
                         ),
+                        const SizedBox(height: 10),
+                        if (loadingPrayerTimes)
+                          const LinearProgressIndicator(
+                            color: gold,
+                            backgroundColor: panel,
+                          )
+                        else
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton.icon(
+                              onPressed: loadPrayerTimes,
+                              icon: const Icon(
+                                Icons.my_location_rounded,
+                                size: 18,
+                              ),
+                              label: const Text('تحديث الموقع والمواقيت'),
+                              style: TextButton.styleFrom(
+                                foregroundColor: gold,
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -170,11 +423,21 @@ class _HomePageState extends State<HomePage> {
                   child: Row(
                     children: [
                       const Expanded(
-                        child: Text('مواقيت الصلاة', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
+                        child: Text(
+                          'مواقيت الصلاة',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
                       ),
                       TextButton(
-                        onPressed: () => _message('سنضيف الحساب الفعلي لمواقيت الصلاة في المرحلة التالية.'),
-                        child: const Text('التفاصيل', style: TextStyle(color: gold)),
+                        onPressed: () => message(locationMessage),
+                        child: const Text(
+                          'التفاصيل',
+                          style: TextStyle(color: gold),
+                        ),
                       ),
                     ],
                   ),
@@ -184,20 +447,45 @@ class _HomePageState extends State<HomePage> {
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 sliver: SliverToBoxAdapter(
                   child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 8),
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 18,
+                      horizontal: 8,
+                    ),
                     decoration: BoxDecoration(
                       color: panel,
                       borderRadius: BorderRadius.circular(22),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.06),
+                      ),
                     ),
-                    child: const Row(
+                    child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
-                        PrayerItem(name: 'الفجر', time: '--:--', icon: Icons.nights_stay_rounded),
-                        PrayerItem(name: 'الظهر', time: '--:--', icon: Icons.wb_sunny_rounded),
-                        PrayerItem(name: 'العصر', time: '--:--', icon: Icons.sunny_snowing),
-                        PrayerItem(name: 'المغرب', time: '--:--', icon: Icons.wb_twilight_rounded),
-                        PrayerItem(name: 'العشاء', time: '--:--', icon: Icons.dark_mode_rounded),
+                        PrayerItem(
+                          name: 'الفجر',
+                          time: formatPrayerTime(prayerTimes?.fajr),
+                          icon: Icons.nights_stay_rounded,
+                        ),
+                        PrayerItem(
+                          name: 'الظهر',
+                          time: formatPrayerTime(prayerTimes?.dhuhr),
+                          icon: Icons.wb_sunny_rounded,
+                        ),
+                        PrayerItem(
+                          name: 'العصر',
+                          time: formatPrayerTime(prayerTimes?.asr),
+                          icon: Icons.sunny_snowing,
+                        ),
+                        PrayerItem(
+                          name: 'المغرب',
+                          time: formatPrayerTime(prayerTimes?.maghrib),
+                          icon: Icons.wb_twilight_rounded,
+                        ),
+                        PrayerItem(
+                          name: 'العشاء',
+                          time: formatPrayerTime(prayerTimes?.isha),
+                          icon: Icons.dark_mode_rounded,
+                        ),
                       ],
                     ),
                   ),
@@ -205,14 +493,22 @@ class _HomePageState extends State<HomePage> {
               ),
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(20, 28, 20, 14),
-                sliver: SliverToBoxAdapter(
-                  child: const Text('اكتشف مؤذني', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
+                sliver: const SliverToBoxAdapter(
+                  child: Text(
+                    'اكتشف مؤذني',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
                 ),
               ),
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
                 sliver: SliverGrid(
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  gridDelegate:
+                      const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 2,
                     mainAxisSpacing: 12,
                     crossAxisSpacing: 12,
@@ -221,25 +517,47 @@ class _HomePageState extends State<HomePage> {
                   delegate: SliverChildBuilderDelegate(
                     (context, index) {
                       final item = features[index];
+
                       return InkWell(
                         borderRadius: BorderRadius.circular(20),
-                        onTap: () => _message('قسم ${item['title']} سنعمل على تفعيله في الخطوات القادمة.'),
+                        onTap: () => message(
+                          'قسم ${item['title']} سنعمل على تفعيله في الخطوات القادمة.',
+                        ),
                         child: Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
                             color: panel,
                             borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.06),
+                            ),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(item['icon'] as IconData, color: gold, size: 28),
+                              Icon(
+                                item['icon'] as IconData,
+                                color: gold,
+                                size: 28,
+                              ),
                               const SizedBox(height: 12),
-                              Text(item['title'] as String, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
+                              Text(
+                                item['title'] as String,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 15,
+                                ),
+                              ),
                               const SizedBox(height: 4),
-                              Text(item['sub'] as String, style: const TextStyle(color: muted, fontSize: 11)),
+                              Text(
+                                item['sub'] as String,
+                                style: const TextStyle(
+                                  color: muted,
+                                  fontSize: 11,
+                                ),
+                              ),
                             ],
                           ),
                         ),
@@ -259,26 +577,30 @@ class _HomePageState extends State<HomePage> {
           onDestinationSelected: (index) {
             setState(() => selectedTab = index);
             if (index != 0) {
-              _message(['الرئيسية', 'القرآن الكريم', 'الأذكار', 'الإعدادات'][index]);
+              message(
+                ['الرئيسية', 'القرآن الكريم', 'الأذكار', 'الإعدادات'][index],
+              );
             }
           },
           destinations: const [
-            NavigationDestination(icon: Icon(Icons.home_rounded), label: 'الرئيسية'),
-            NavigationDestination(icon: Icon(Icons.menu_book_rounded), label: 'القرآن'),
-            NavigationDestination(icon: Icon(Icons.favorite_rounded), label: 'الأذكار'),
-            NavigationDestination(icon: Icon(Icons.settings_rounded), label: 'الإعدادات'),
+            NavigationDestination(
+              icon: Icon(Icons.home_rounded),
+              label: 'الرئيسية',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.menu_book_rounded),
+              label: 'القرآن',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.favorite_rounded),
+              label: 'الأذكار',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.settings_rounded),
+              label: 'الإعدادات',
+            ),
           ],
         ),
-      ),
-    );
-  }
-
-  void _message(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message, textDirection: TextDirection.rtl),
-        backgroundColor: panel,
-        behavior: SnackBarBehavior.floating,
       ),
     );
   }
@@ -303,9 +625,19 @@ class PrayerItem extends StatelessWidget {
       children: [
         Icon(icon, color: gold, size: 22),
         const SizedBox(height: 9),
-        Text(name, style: const TextStyle(color: muted, fontSize: 11)),
+        Text(
+          name,
+          style: const TextStyle(color: muted, fontSize: 11),
+        ),
         const SizedBox(height: 6),
-        Text(time, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+        Text(
+          time,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 12,
+          ),
+        ),
       ],
     );
   }
