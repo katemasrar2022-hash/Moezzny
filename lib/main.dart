@@ -137,13 +137,15 @@ class _HomePageState extends State<HomePage> {
       longitude = position.longitude;
 
       refreshPrayerTimes();
-    } catch (_) {
+    
+    } catch (e, stackTrace) {
+      debugPrint('MOEZZNY LOCATION ERROR: $e');
+      debugPrint('MOEZZNY LOCATION STACK: $stackTrace');
+
       updateLocationMessage(
-        'تعذر تحديد الموقع. تحقق من GPS وحاول مجددًا.',
+        'خطأ تحديد الموقع: $e',
       );
     }
-  }
-
   void updateLocationMessage(String message) {
     if (!mounted) return;
 
