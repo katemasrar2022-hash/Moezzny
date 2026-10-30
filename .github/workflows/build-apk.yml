@@ -7,7 +7,8 @@ on:
     paths:
       - "Moezzny_Flutter_Starter.zip"
       - ".github/workflows/build-apk.yml"
-      - "lib/main.dart"  
+      - "lib/main.dart"
+
 permissions:
   contents: read
 
@@ -44,7 +45,7 @@ jobs:
       - name: Generate Android platform
         working-directory: extracted
         run: flutter create --platforms=android --project-name moezzny .
-      
+
       - name: Use repository source override
         shell: bash
         run: |
@@ -59,30 +60,50 @@ jobs:
         working-directory: extracted
         run: flutter pub add geolocator egyptian_prayer_times
 
-  
       - name: Add notification packages
         working-directory: extracted
         run: flutter pub add flutter_local_notifications timezone flutter_timezone
 
-      - name: Add location permissions
+      - name: Add location and notification permissions
         working-directory: extracted
         shell: bash
         run: |
+          set -e
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
-          p = Path("android/app/src/main/AndroidManifest.xml")
-          text = p.read_text()
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          if not manifest.exists():
+              raise SystemExit("AndroidManifest.xml not found")
 
-          
+          content = manifest.read_text(encoding="utf-8")
+
           permissions = [
-              '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />',
-              '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />',
-              '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',
-              '    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />',
-              '    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />',
+              "android.permission.INTERNET",
+              "android.permission.ACCESS_COARSE_LOCATION",
+              "android.permission.ACCESS_FINE_LOCATION",
+              "android.permission.POST_NOTIFICATIONS",
+              "android.permission.RECEIVE_BOOT_COMPLETED",
+              "android.permission.SCHEDULE_EXACT_ALARM",
           ]
 
+          for permission in permissions:
+              tag = f'<uses-permission android:name="{permission}" />'
+              if permission not in content:
+                  content = re.sub(
+                      r"(<application\b)",
+                      tag + "\n    \\1",
+                      content,
+                      count=1
+                  )
+
+          if "<application" not in content:
+              raise SystemExit("Could not find application tag in manifest")
+
+          manifest.write_text(content, encoding="utf-8")
+          print("Location and notification permissions configured.")
+          PY
 
       - name: Configure Android SDK
         working-directory: extracted
@@ -97,42 +118,44 @@ jobs:
               Path("android/app/build.gradle.kts"),
               Path("android/app/build.gradle"),
           ]
-          file = next((p for p in candidates if p.exists()), None)
-          if file is None:
+
+          gradle_file = next((p for p in candidates if p.exists()), None)
+          if gradle_file is None:
               raise SystemExit("Android app Gradle file not found")
 
-          text = file.read_text()
-          if file.suffix == ".kts":
-              updated, count = re.subn(
-                  r"(?m)^(\s*)compileSdk\s*=\s*.*$",
-                  r"\g<1>compileSdk = 36",
-                  text,
-                  count=1,
+          content = gradle_file.read_text(encoding="utf-8")
+
+          patterns = [
+              r"(?m)^(\s*)compileSdk\s*=\s*.*$",
+              r"(?m)^(\s*)compileSdkVersion\s+.*$",
+              r"(?m)^(\s*)compileSdk\s+.*$",
+          ]
+
+          replacement = (
+              r"\g<1>compileSdk = 36"
+              if gradle_file.suffix == ".kts"
+              else r"\g<1>compileSdk 36"
+          )
+
+          for pattern in patterns:
+              content, count = re.subn(
+                  pattern, replacement, content, count=1
               )
-              if count == 0:
-                  updated, count = re.subn(
-                      r"(?m)^(\s*)compileSdk\s+.*$",
-                      r"\g<1>compileSdk = 36",
-                      text,
-                      count=1,
-                  )
-          else:
-              updated, count = re.subn(
-                  r"(?m)^(\s*)compileSdk(?:Version)?\s+.*$",
-                  r"\g<1>compileSdkVersion 36",
-                  text,
-                  count=1,
-              )
-          if count == 0:
+              if count:
+                  break
+
+          if not count:
               raise SystemExit("Could not locate compileSdk setting")
-          file.write_text(updated)
-          print(f"Configured compile SDK in {file}")
+
+          gradle_file.write_text(content, encoding="utf-8")
+          print(f"Configured compile SDK in {gradle_file}")
           PY
 
       - name: Enable Android core library desugaring
         working-directory: extracted
         shell: bash
         run: |
+          set -e
           python3 - <<'PY'
           from pathlib import Path
           import re
@@ -141,53 +164,55 @@ jobs:
               Path("android/app/build.gradle.kts"),
               Path("android/app/build.gradle"),
           ]
-          file = next((p for p in candidates if p.exists()), None)
-          if file is None:
+
+          gradle_file = next((p for p in candidates if p.exists()), None)
+          if gradle_file is None:
               raise SystemExit("Android app Gradle file not found")
 
-          text = file.read_text()
+          content = gradle_file.read_text(encoding="utf-8")
 
-          if file.suffix == ".kts":
-              if "isCoreLibraryDesugaringEnabled" not in text:
-                  text, count = re.subn(
-                      r'compileOptions\s*\{',
-                      'compileOptions {\n'
-                      '        isCoreLibraryDesugaringEnabled = true',
-                      text,
+          if gradle_file.suffix == ".kts":
+              if "isCoreLibraryDesugaringEnabled" not in content:
+                  content, count = re.subn(
+                      r"compileOptions\s*\{",
+                      "compileOptions {\n"
+                      "        isCoreLibraryDesugaringEnabled = true",
+                      content,
                       count=1,
                   )
                   if count == 0:
                       raise SystemExit("compileOptions block not found")
 
-              if "coreLibraryDesugaring(" not in text:
-                  text += (
-                      '\n\ndependencies {\n'
-                      '    coreLibraryDesugaring('
-                      '"com.android.tools:desugar_jdk_libs:2.1.5")\n'
-                      '}\n'
-                  )
+              dependency = (
+                  'coreLibraryDesugaring('
+                  '"com.android.tools:desugar_jdk_libs:2.1.5")'
+              )
           else:
-              if "coreLibraryDesugaringEnabled" not in text:
-                  text, count = re.subn(
-                      r'compileOptions\s*\{',
-                      'compileOptions {\n'
-                      '        coreLibraryDesugaringEnabled true',
-                      text,
+              if "coreLibraryDesugaringEnabled" not in content:
+                  content, count = re.subn(
+                      r"compileOptions\s*\{",
+                      "compileOptions {\n"
+                      "        coreLibraryDesugaringEnabled true",
+                      content,
                       count=1,
                   )
                   if count == 0:
                       raise SystemExit("compileOptions block not found")
 
-              if "coreLibraryDesugaring " not in text:
-                  text += (
-                      '\n\ndependencies {\n'
-                      '    coreLibraryDesugaring '
-                      '"com.android.tools:desugar_jdk_libs:2.1.5"\n'
-                      '}\n'
-                  )
+              dependency = (
+                  'coreLibraryDesugaring '
+                  '"com.android.tools:desugar_jdk_libs:2.1.5"'
+              )
 
-          file.write_text(text)
-          print(f"Enabled core library desugaring in {file}")
+          if "desugar_jdk_libs" not in content:
+              content += (
+                  "\n\ndependencies {\n"
+                  f"    {dependency}\n"
+                  "}\n"
+              )
+
+          gradle_file.write_text(content, encoding="utf-8")
+          print("Core library desugaring configured.")
           PY
 
       - name: Get dependencies
