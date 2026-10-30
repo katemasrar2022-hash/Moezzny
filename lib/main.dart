@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:egyptian_prayer_times/egyptian_prayer_times.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const MoezznyApp());
 }
 
@@ -50,10 +51,13 @@ class _HomePageState extends State<HomePage> {
   PrayerTimes? prayerTimes;
   PrayerName? nextPrayer;
   DateTime? nextPrayerTime;
+
   bool loadingPrayerTimes = true;
   String locationMessage = 'جارٍ تحديد موقعك...';
+
   double? latitude;
   double? longitude;
+
   Timer? prayerTimer;
 
   final List<Map<String, dynamic>> features = [
@@ -92,7 +96,9 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+
     loadPrayerTimes();
+
     prayerTimer = Timer.periodic(
       const Duration(minutes: 1),
       (_) => refreshPrayerTimes(),
@@ -105,34 +111,63 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
-  
+  void updateLocationMessage(String text) {
+    if (!mounted) return;
+
+    setState(() {
+      locationMessage = text;
+      loadingPrayerTimes = false;
+    });
+  }
+
   Future<void> loadPrayerTimes() async {
+    if (!mounted) return;
+
+    setState(() {
+      loadingPrayerTimes = true;
+      locationMessage = 'جارٍ تحديد موقعك...';
+    });
+
     try {
       final serviceEnabled =
           await Geolocator.isLocationServiceEnabled();
 
       if (!serviceEnabled) {
         updateLocationMessage(
-          'فعّل خدمة الموقع GPS ثم أعد المحاولة',
+          'خدمة الموقع GPS غير مفعّلة. فعّلها وحاول مرة أخرى.',
         );
         return;
       }
 
-      var permission = await Geolocator.checkPermission();
+      LocationPermission permission =
+          await Geolocator.checkPermission();
 
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
       }
 
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
+      if (permission == LocationPermission.denied) {
         updateLocationMessage(
-          'اسمح لمؤذني بالوصول إلى الموقع لحساب المواقيت',
+          'لم يتم السماح لمؤذني باستخدام الموقع.',
         );
         return;
       }
 
-      final position = await Geolocator.getCurrentPosition();
+      if (permission == LocationPermission.deniedForever) {
+        updateLocationMessage(
+          'إذن الموقع مرفوض نهائيًا. افتح إعدادات التطبيق واسمح بالموقع.',
+        );
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 30),
+        ),
+      );
+
+      if (!mounted) return;
 
       latitude = position.latitude;
       longitude = position.longitude;
@@ -143,11 +178,59 @@ class _HomePageState extends State<HomePage> {
       debugPrint('MOEZZNY LOCATION STACK: $stackTrace');
 
       updateLocationMessage(
-        'خطأ تحديد الموقع: $e',
+        'تعذر تحديد الموقع. تحقق من GPS وحاول مرة أخرى.',
       );
     }
   }
 
+  void refreshPrayerTimes() {
+    if (!mounted || latitude == null || longitude == null) {
+      return;
+    }
+
+    try {
+      final calculator = PrayerCalculator.withLocalTimezone(
+        latitude: latitude!,
+        longitude: longitude!,
+        asrMethod: AsrMethod.standard,
+      );
+
+      final now = DateTime.now();
+
+      final todayTimes = calculator.calculate(now);
+
+      PrayerName? upcomingPrayer =
+          todayTimes.getNextPrayerName(now);
+
+      DateTime? upcomingTime =
+          todayTimes.getNextPrayer(now);
+
+      if (upcomingPrayer == null || upcomingTime == null) {
+        final tomorrow = now.add(const Duration(days: 1));
+        final tomorrowTimes = calculator.calculate(tomorrow);
+
+        upcomingPrayer = PrayerName.fajr;
+        upcomingTime = tomorrowTimes.fajr;
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        prayerTimes = todayTimes;
+        nextPrayer = upcomingPrayer;
+        nextPrayerTime = upcomingTime;
+        loadingPrayerTimes = false;
+        locationMessage = 'تم تحديد موقعك وحساب المواقيت بنجاح';
+      });
+    } catch (e, stackTrace) {
+      debugPrint('MOEZZNY PRAYER ERROR: $e');
+      debugPrint('MOEZZNY PRAYER STACK: $stackTrace');
+
+      updateLocationMessage(
+        'حدث خطأ أثناء حساب مواقيت الصلاة.',
+      );
+    }
+  }
 
   String formatPrayerTime(DateTime? time) {
     if (time == null) return '--:--';
@@ -177,13 +260,22 @@ class _HomePageState extends State<HomePage> {
   }
 
   void message(String text) {
+    if (!mounted) return;
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(text, textDirection: TextDirection.rtl),
+        content: Text(
+          text,
+          textDirection: TextDirection.rtl,
+        ),
         backgroundColor: panel,
         behavior: SnackBarBehavior.floating,
       ),
     );
+  }
+
+  Future<void> openLocationSettings() async {
+    await Geolocator.openAppSettings();
   }
 
   @override
@@ -253,6 +345,7 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
               ),
+
               SliverPadding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 sliver: SliverToBoxAdapter(
@@ -310,6 +403,7 @@ class _HomePageState extends State<HomePage> {
                           ),
                         ),
                         const SizedBox(height: 22),
+
                         Container(
                           padding: const EdgeInsets.all(15),
                           decoration: BoxDecoration(
@@ -359,7 +453,9 @@ class _HomePageState extends State<HomePage> {
                             ],
                           ),
                         ),
+
                         const SizedBox(height: 10),
+
                         if (loadingPrayerTimes)
                           const LinearProgressIndicator(
                             color: gold,
@@ -368,16 +464,31 @@ class _HomePageState extends State<HomePage> {
                         else
                           Align(
                             alignment: Alignment.centerRight,
-                            child: TextButton.icon(
-                              onPressed: loadPrayerTimes,
-                              icon: const Icon(
-                                Icons.my_location_rounded,
-                                size: 18,
-                              ),
-                              label: const Text('تحديث الموقع والمواقيت'),
-                              style: TextButton.styleFrom(
-                                foregroundColor: gold,
-                              ),
+                            child: Wrap(
+                              spacing: 8,
+                              children: [
+                                TextButton.icon(
+                                  onPressed: loadPrayerTimes,
+                                  icon: const Icon(
+                                    Icons.my_location_rounded,
+                                    size: 18,
+                                  ),
+                                  label: const Text(
+                                    'تحديث الموقع والمواقيت',
+                                  ),
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: gold,
+                                  ),
+                                ),
+                                if (locationMessage.contains('مرفوض نهائيًا'))
+                                  TextButton(
+                                    onPressed: openLocationSettings,
+                                    child: const Text(
+                                      'إعدادات التطبيق',
+                                      style: TextStyle(color: gold),
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
                       ],
@@ -385,6 +496,7 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
               ),
+
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(20, 26, 20, 12),
                 sliver: SliverToBoxAdapter(
@@ -411,6 +523,7 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
               ),
+
               SliverPadding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 sliver: SliverToBoxAdapter(
@@ -459,6 +572,7 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
               ),
+
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(20, 28, 20, 14),
                 sliver: const SliverToBoxAdapter(
@@ -472,6 +586,7 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
               ),
+
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
                 sliver: SliverGrid(
@@ -538,12 +653,14 @@ class _HomePageState extends State<HomePage> {
             ],
           ),
         ),
+
         bottomNavigationBar: NavigationBar(
           backgroundColor: const Color(0xFF101827),
           indicatorColor: gold.withValues(alpha: 0.18),
           selectedIndex: selectedTab,
           onDestinationSelected: (index) {
             setState(() => selectedTab = index);
+
             if (index != 0) {
               message(
                 ['الرئيسية', 'القرآن الكريم', 'الأذكار', 'الإعدادات'][index],
@@ -595,7 +712,10 @@ class PrayerItem extends StatelessWidget {
         const SizedBox(height: 9),
         Text(
           name,
-          style: const TextStyle(color: muted, fontSize: 11),
+          style: const TextStyle(
+            color: muted,
+            fontSize: 11,
+          ),
         ),
         const SizedBox(height: 6),
         Text(
