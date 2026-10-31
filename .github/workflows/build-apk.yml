@@ -1,4 +1,3 @@
-
 name: Moezzny Android Build
 
 on:
@@ -6,6 +5,7 @@ on:
   push:
     paths:
       - "Moezzny_Flutter_Starter.zip"
+      - "Moezzny-Quran-Assets.zip"
       - ".github/workflows/build-apk.yml"
       - "lib/main.dart"
 
@@ -42,6 +42,63 @@ jobs:
           test -f extracted/pubspec.yaml
           echo "PROJECT_DIR=$GITHUB_WORKSPACE/extracted" >> "$GITHUB_ENV"
 
+      - name: Install offline Quran assets
+        shell: bash
+        run: |
+          set -e
+          test -f Moezzny-Quran-Assets.zip
+          mkdir -p extracted/assets/quran
+          unzip -o Moezzny-Quran-Assets.zip \
+            'moezzny_quran_assets/assets/quran/*' \
+            -d /tmp/moezzny-quran
+          cp /tmp/moezzny-quran/moezzny_quran_assets/assets/quran/* \
+            extracted/assets/quran/
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          pubspec = Path("extracted/pubspec.yaml")
+          content = pubspec.read_text(encoding="utf-8")
+
+          if "assets/quran/" not in content:
+              lines = content.splitlines(keepends=True)
+              flutter_index = next(
+                  (i for i, line in enumerate(lines)
+                   if line.strip() == "flutter:"),
+                  None
+              )
+              if flutter_index is None:
+                  raise SystemExit("Could not find flutter: section in pubspec.yaml")
+
+              assets_index = next(
+                  (i for i in range(flutter_index + 1, len(lines))
+                   if lines[i].startswith("  assets:")),
+                  None
+              )
+
+              if assets_index is None:
+                  lines[flutter_index + 1:flutter_index + 1] = [
+                      "  assets:\n",
+                      "    - assets/quran/\n",
+                  ]
+              else:
+                  insert_index = assets_index + 1
+                  while insert_index < len(lines):
+                      line = lines[insert_index]
+                      if line.startswith("    - ") or not line.strip():
+                          insert_index += 1
+                      else:
+                          break
+                  lines.insert(insert_index, "    - assets/quran/\n")
+
+              pubspec.write_text("".join(lines), encoding="utf-8")
+
+          print("Offline Quran assets copied and registered.")
+          PY
+
+          test -s extracted/assets/quran/quran-uthmani.txt
+          test -s extracted/assets/quran/surah-index.json
+
       - name: Generate Android platform
         working-directory: extracted
         run: flutter create --platforms=android --project-name moezzny .
@@ -59,6 +116,7 @@ jobs:
       - name: Add prayer and location packages
         working-directory: extracted
         run: flutter pub add geolocator egyptian_prayer_times shared_preferences
+
       - name: Add notification packages
         working-directory: extracted
         run: flutter pub add flutter_local_notifications timezone flutter_timezone
@@ -136,6 +194,7 @@ jobs:
               else r"\g<1>compileSdk 36"
           )
 
+          count = 0
           for pattern in patterns:
               content, count = re.subn(
                   pattern, replacement, content, count=1
