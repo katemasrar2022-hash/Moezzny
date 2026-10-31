@@ -1,10 +1,10 @@
-
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:egyptian_prayer_times/egyptian_prayer_times.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const MoezznyApp());
@@ -38,27 +38,7 @@ class MoezznyApp extends StatelessWidget {
   }
 }
 
-class HomePage extends StatefulWidget {
-  const HomePage({super.key});
-
-  @override
-  State<HomePage> createState() => _HomePageState();
-}
-
-class _HomePageState extends State<HomePage> {
-  int selectedTab = 0;
-
-  PrayerTimes? prayerTimes;
-  PrayerName? nextPrayer;
-  DateTime? nextPrayerTime;
-
-  bool loadingPrayerTimes = true;
-  String locationMessage = 'جارٍ تحديد موقعك...';
-
-  double? latitude;
-  double? longitude;
-
-  Timer? prayerTimer;
+// ==================== صفحة الأذكار ====================
 
 class AdhkarPage extends StatefulWidget {
   const AdhkarPage({super.key});
@@ -131,14 +111,29 @@ class _AdhkarPageState extends State<AdhkarPage> {
   Future<void> loadProgress() async {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
+
     setState(() {
       selectedCategory = prefs.getInt('adhkar_category') ?? 0;
+
+      if (selectedCategory < 0 ||
+          selectedCategory >= categories.length) {
+        selectedCategory = 0;
+      }
+
       selectedItem = prefs.getInt('adhkar_item') ?? 0;
       final items = categories[selectedCategory]['items'] as List;
-      if (selectedItem >= items.length) selectedItem = 0;
+
+      if (selectedItem < 0 || selectedItem >= items.length) {
+        selectedItem = 0;
+      }
+
       final total = items[selectedItem]['count'] as int;
       remaining = prefs.getInt('adhkar_remaining') ?? total;
-      if (remaining < 0 || remaining > total) remaining = total;
+
+      if (remaining < 0 || remaining > total) {
+        remaining = total;
+      }
+
       loading = false;
     });
   }
@@ -161,22 +156,22 @@ class _AdhkarPageState extends State<AdhkarPage> {
 
   void nextItem() {
     final items = categories[selectedCategory]['items'] as List;
+
     setState(() {
-      if (selectedItem < items.length - 1) {
-        selectedItem++;
-      } else {
-        selectedItem = 0;
-      }
+      selectedItem = (selectedItem + 1) % items.length;
       remaining = items[selectedItem]['count'] as int;
     });
+
     saveProgress();
   }
 
   void tapCounter() {
     if (remaining <= 0) return;
+
     setState(() {
       remaining--;
     });
+
     saveProgress();
   }
 
@@ -196,7 +191,9 @@ class _AdhkarPageState extends State<AdhkarPage> {
           centerTitle: true,
         ),
         body: loading
-            ? const Center(child: CircularProgressIndicator(color: gold))
+            ? const Center(
+                child: CircularProgressIndicator(color: gold),
+              )
             : ListView(
                 padding: const EdgeInsets.all(18),
                 children: [
@@ -215,6 +212,7 @@ class _AdhkarPageState extends State<AdhkarPage> {
                     runSpacing: 8,
                     children: List.generate(categories.length, (index) {
                       final selected = selectedCategory == index;
+
                       return ChoiceChip(
                         label: Text(categories[index]['name']),
                         selected: selected,
@@ -234,13 +232,18 @@ class _AdhkarPageState extends State<AdhkarPage> {
                     decoration: BoxDecoration(
                       color: panel,
                       borderRadius: BorderRadius.circular(22),
-                      border: Border.all(color: gold.withValues(alpha: 0.3)),
+                      border: Border.all(
+                        color: gold.withValues(alpha: 0.3),
+                      ),
                     ),
                     child: Column(
                       children: [
                         Text(
                           categories[selectedCategory]['name'],
-                          style: const TextStyle(color: gold, fontSize: 16),
+                          style: const TextStyle(
+                            color: gold,
+                            fontSize: 16,
+                          ),
                         ),
                         const SizedBox(height: 22),
                         Text(
@@ -267,7 +270,10 @@ class _AdhkarPageState extends State<AdhkarPage> {
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               color: gold.withValues(alpha: 0.14),
-                              border: Border.all(color: gold, width: 3),
+                              border: Border.all(
+                                color: gold,
+                                width: 3,
+                              ),
                             ),
                             child: Text(
                               '$remaining',
@@ -281,7 +287,9 @@ class _AdhkarPageState extends State<AdhkarPage> {
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          remaining == 0 ? 'أحسنت، اكتمل الذكر' : 'اضغط على العداد للتسبيح',
+                          remaining == 0
+                              ? 'أحسنت، اكتمل الذكر'
+                              : 'اضغط على العداد للتسبيح',
                           style: const TextStyle(color: muted),
                         ),
                         const SizedBox(height: 24),
@@ -321,36 +329,60 @@ class _AdhkarPageState extends State<AdhkarPage> {
   }
 }
 
+// ==================== الصفحة الرئيسية ====================
+
+class HomePage extends StatefulWidget {
+  const HomePage({super.key});
+
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  int selectedTab = 0;
+
+  PrayerTimes? prayerTimes;
+  PrayerName? nextPrayer;
+  DateTime? nextPrayerTime;
+
+  bool loadingPrayerTimes = true;
+  String locationMessage = 'جارٍ تحديد موقعك...';
+
+  double? latitude;
+  double? longitude;
+
+  Timer? prayerTimer;
+
   final List<Map<String, dynamic>> features = [
     {
       'icon': Icons.menu_book_rounded,
       'title': 'القرآن الكريم',
-      'sub': 'وردك اليومي'
+      'sub': 'وردك اليومي',
     },
     {
       'icon': Icons.explore_rounded,
       'title': 'القبلة',
-      'sub': 'اتجاه القبلة'
+      'sub': 'اتجاه القبلة',
     },
     {
       'icon': Icons.favorite_rounded,
       'title': 'الأذكار',
-      'sub': 'حصن المسلم'
+      'sub': 'حصن المسلم',
     },
     {
       'icon': Icons.calendar_month_rounded,
       'title': 'التقويم الهجري',
-      'sub': 'المناسبات الإسلامية'
+      'sub': 'المناسبات الإسلامية',
     },
     {
       'icon': Icons.mosque_rounded,
       'title': 'المساجد',
-      'sub': 'المساجد القريبة'
+      'sub': 'المساجد القريبة',
     },
     {
       'icon': Icons.notifications_active_rounded,
       'title': 'التنبيهات',
-      'sub': 'إعدادات الأذان'
+      'sub': 'إعدادات الأذان',
     },
   ];
 
@@ -457,7 +489,6 @@ class _AdhkarPageState extends State<AdhkarPage> {
       );
 
       final now = DateTime.now();
-
       final todayTimes = calculator.calculate(now);
 
       PrayerName? upcomingPrayer =
@@ -537,6 +568,15 @@ class _AdhkarPageState extends State<AdhkarPage> {
 
   Future<void> openLocationSettings() async {
     await Geolocator.openAppSettings();
+  }
+
+  void openAdhkar() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const AdhkarPage(),
+      ),
+    );
   }
 
   @override
@@ -664,7 +704,6 @@ class _AdhkarPageState extends State<AdhkarPage> {
                           ),
                         ),
                         const SizedBox(height: 22),
-
                         Container(
                           padding: const EdgeInsets.all(15),
                           decoration: BoxDecoration(
@@ -714,9 +753,7 @@ class _AdhkarPageState extends State<AdhkarPage> {
                             ],
                           ),
                         ),
-
                         const SizedBox(height: 10),
-
                         if (loadingPrayerTimes)
                           const LinearProgressIndicator(
                             color: gold,
@@ -741,7 +778,9 @@ class _AdhkarPageState extends State<AdhkarPage> {
                                     foregroundColor: gold,
                                   ),
                                 ),
-                                if (locationMessage.contains('مرفوض نهائيًا'))
+                                if (locationMessage.contains(
+                                  'مرفوض نهائيًا',
+                                ))
                                   TextButton(
                                     onPressed: openLocationSettings,
                                     child: const Text(
@@ -865,17 +904,14 @@ class _AdhkarPageState extends State<AdhkarPage> {
                       return InkWell(
                         borderRadius: BorderRadius.circular(20),
                         onTap: () {
-  if (item['title'] == 'الأذكار') {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const AdhkarPage()),
-    );
-  } else {
-    message(
-      'قسم ${item['title']} سنعمل على تفعيله في الخطوات القادمة.',
-    );
-  }
-},
+                          if (item['title'] == 'الأذكار') {
+                            openAdhkar();
+                          } else {
+                            message(
+                              'قسم ${item['title']} سنعمل على تفعيله في الخطوات القادمة.',
+                            );
+                          }
+                        },
                         child: Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
@@ -923,7 +959,6 @@ class _AdhkarPageState extends State<AdhkarPage> {
             ],
           ),
         ),
-
         bottomNavigationBar: NavigationBar(
           backgroundColor: const Color(0xFF101827),
           indicatorColor: gold.withValues(alpha: 0.18),
@@ -931,7 +966,9 @@ class _AdhkarPageState extends State<AdhkarPage> {
           onDestinationSelected: (index) {
             setState(() => selectedTab = index);
 
-            if (index != 0) {
+            if (index == 2) {
+              openAdhkar();
+            } else if (index != 0) {
               message(
                 ['الرئيسية', 'القرآن الكريم', 'الأذكار', 'الإعدادات'][index],
               );
@@ -960,6 +997,8 @@ class _AdhkarPageState extends State<AdhkarPage> {
     );
   }
 }
+
+// ==================== عنصر الصلاة ====================
 
 class PrayerItem extends StatelessWidget {
   final String name;
