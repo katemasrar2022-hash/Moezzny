@@ -4,7 +4,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:egyptian_prayer_times/egyptian_prayer_times.dart';
-
+import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const MoezznyApp());
@@ -59,6 +59,267 @@ class _HomePageState extends State<HomePage> {
   double? longitude;
 
   Timer? prayerTimer;
+
+class AdhkarPage extends StatefulWidget {
+  const AdhkarPage({super.key});
+
+  @override
+  State<AdhkarPage> createState() => _AdhkarPageState();
+}
+
+class _AdhkarPageState extends State<AdhkarPage> {
+  final List<Map<String, dynamic>> categories = [
+    {
+      'name': 'أذكار الصباح',
+      'items': [
+        {'text': 'أصبحنا وأصبح الملك لله، والحمد لله، لا إله إلا الله وحده لا شريك له، له الملك وله الحمد وهو على كل شيء قدير.', 'count': 1},
+        {'text': 'اللهم بك أصبحنا وبك أمسينا وبك نحيا وبك نموت وإليك النشور.', 'count': 1},
+        {'text': 'رضيت بالله رباً، وبالإسلام ديناً، وبمحمد ﷺ نبياً.', 'count': 3},
+        {'text': 'سبحان الله وبحمده.', 'count': 100},
+        {'text': 'أستغفر الله وأتوب إليه.', 'count': 100},
+      ],
+    },
+    {
+      'name': 'أذكار المساء',
+      'items': [
+        {'text': 'أمسينا وأمسى الملك لله، والحمد لله، لا إله إلا الله وحده لا شريك له، له الملك وله الحمد وهو على كل شيء قدير.', 'count': 1},
+        {'text': 'اللهم بك أمسينا وبك أصبحنا وبك نحيا وبك نموت وإليك المصير.', 'count': 1},
+        {'text': 'رضيت بالله رباً، وبالإسلام ديناً، وبمحمد ﷺ نبياً.', 'count': 3},
+        {'text': 'سبحان الله وبحمده.', 'count': 100},
+      ],
+    },
+    {
+      'name': 'أذكار النوم',
+      'items': [
+        {'text': 'باسمك اللهم أموت وأحيا.', 'count': 1},
+        {'text': 'اللهم قني عذابك يوم تبعث عبادك.', 'count': 3},
+        {'text': 'سبحان الله.', 'count': 33},
+        {'text': 'الحمد لله.', 'count': 33},
+        {'text': 'الله أكبر.', 'count': 34},
+      ],
+    },
+    {
+      'name': 'أذكار الاستيقاظ',
+      'items': [
+        {'text': 'الحمد لله الذي أحيانا بعدما أماتنا وإليه النشور.', 'count': 1},
+      ],
+    },
+    {
+      'name': 'أذكار بعد الصلاة',
+      'items': [
+        {'text': 'أستغفر الله.', 'count': 3},
+        {'text': 'اللهم أنت السلام ومنك السلام تباركت يا ذا الجلال والإكرام.', 'count': 1},
+        {'text': 'سبحان الله.', 'count': 33},
+        {'text': 'الحمد لله.', 'count': 33},
+        {'text': 'الله أكبر.', 'count': 33},
+      ],
+    },
+  ];
+
+  int selectedCategory = 0;
+  int selectedItem = 0;
+  int remaining = 0;
+  bool loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    remaining = categories[0]['items'][0]['count'] as int;
+    loadProgress();
+  }
+
+  Future<void> loadProgress() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      selectedCategory = prefs.getInt('adhkar_category') ?? 0;
+      selectedItem = prefs.getInt('adhkar_item') ?? 0;
+      final items = categories[selectedCategory]['items'] as List;
+      if (selectedItem >= items.length) selectedItem = 0;
+      final total = items[selectedItem]['count'] as int;
+      remaining = prefs.getInt('adhkar_remaining') ?? total;
+      if (remaining < 0 || remaining > total) remaining = total;
+      loading = false;
+    });
+  }
+
+  Future<void> saveProgress() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('adhkar_category', selectedCategory);
+    await prefs.setInt('adhkar_item', selectedItem);
+    await prefs.setInt('adhkar_remaining', remaining);
+  }
+
+  void chooseCategory(int index) {
+    setState(() {
+      selectedCategory = index;
+      selectedItem = 0;
+      remaining = categories[index]['items'][0]['count'] as int;
+    });
+    saveProgress();
+  }
+
+  void nextItem() {
+    final items = categories[selectedCategory]['items'] as List;
+    setState(() {
+      if (selectedItem < items.length - 1) {
+        selectedItem++;
+      } else {
+        selectedItem = 0;
+      }
+      remaining = items[selectedItem]['count'] as int;
+    });
+    saveProgress();
+  }
+
+  void tapCounter() {
+    if (remaining <= 0) return;
+    setState(() {
+      remaining--;
+    });
+    saveProgress();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final items = categories[selectedCategory]['items'] as List;
+    final item = items[selectedItem];
+
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: navy,
+        appBar: AppBar(
+          backgroundColor: navy,
+          foregroundColor: Colors.white,
+          title: const Text('الأذكار'),
+          centerTitle: true,
+        ),
+        body: loading
+            ? const Center(child: CircularProgressIndicator(color: gold))
+            : ListView(
+                padding: const EdgeInsets.all(18),
+                children: [
+                  const Text(
+                    'اذكر الله.. تطمئن القلوب',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: gold,
+                      fontSize: 21,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: List.generate(categories.length, (index) {
+                      final selected = selectedCategory == index;
+                      return ChoiceChip(
+                        label: Text(categories[index]['name']),
+                        selected: selected,
+                        selectedColor: gold,
+                        backgroundColor: panel,
+                        labelStyle: TextStyle(
+                          color: selected ? navy : Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        onSelected: (_) => chooseCategory(index),
+                      );
+                    }),
+                  ),
+                  const SizedBox(height: 22),
+                  Container(
+                    padding: const EdgeInsets.all(22),
+                    decoration: BoxDecoration(
+                      color: panel,
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(color: gold.withValues(alpha: 0.3)),
+                    ),
+                    child: Column(
+                      children: [
+                        Text(
+                          categories[selectedCategory]['name'],
+                          style: const TextStyle(color: gold, fontSize: 16),
+                        ),
+                        const SizedBox(height: 22),
+                        Text(
+                          item['text'],
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 21,
+                            height: 1.9,
+                          ),
+                        ),
+                        const SizedBox(height: 28),
+                        const Text(
+                          'المتبقي من التكرار',
+                          style: TextStyle(color: muted),
+                        ),
+                        const SizedBox(height: 12),
+                        GestureDetector(
+                          onTap: tapCounter,
+                          child: Container(
+                            width: 116,
+                            height: 116,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: gold.withValues(alpha: 0.14),
+                              border: Border.all(color: gold, width: 3),
+                            ),
+                            child: Text(
+                              '$remaining',
+                              style: const TextStyle(
+                                color: gold,
+                                fontSize: 38,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          remaining == 0 ? 'أحسنت، اكتمل الذكر' : 'اضغط على العداد للتسبيح',
+                          style: const TextStyle(color: muted),
+                        ),
+                        const SizedBox(height: 24),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () {
+                                  setState(() {
+                                    remaining = item['count'] as int;
+                                  });
+                                  saveProgress();
+                                },
+                                child: const Text('إعادة العداد'),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: ElevatedButton(
+                                onPressed: nextItem,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: gold,
+                                  foregroundColor: navy,
+                                ),
+                                child: const Text('الذكر التالي'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+}
 
   final List<Map<String, dynamic>> features = [
     {
@@ -603,9 +864,18 @@ class _HomePageState extends State<HomePage> {
 
                       return InkWell(
                         borderRadius: BorderRadius.circular(20),
-                        onTap: () => message(
-                          'قسم ${item['title']} سنعمل على تفعيله في الخطوات القادمة.',
-                        ),
+                        onTap: () {
+  if (item['title'] == 'الأذكار') {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const AdhkarPage()),
+    );
+  } else {
+    message(
+      'قسم ${item['title']} سنعمل على تفعيله في الخطوات القادمة.',
+    );
+  }
+},
                         child: Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
