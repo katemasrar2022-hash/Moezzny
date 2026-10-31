@@ -58,8 +58,7 @@ jobs:
 
       - name: Add prayer and location packages
         working-directory: extracted
-        run: flutter pub add geolocator egyptian_prayer_times
-
+        run: flutter pub add geolocator egyptian_prayer_times shared_preferences
       - name: Add notification packages
         working-directory: extracted
         run: flutter pub add flutter_local_notifications timezone flutter_timezone
