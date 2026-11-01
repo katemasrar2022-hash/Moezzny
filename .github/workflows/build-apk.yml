@@ -62,9 +62,11 @@ jobs:
 
           if "assets/quran/" not in content:
               lines = content.splitlines(keepends=True)
+              # Match only the TOP-LEVEL flutter: key, not
+              # dependencies.flutter: or dev_dependencies.flutter:.
               flutter_index = next(
                   (i for i, line in enumerate(lines)
-                   if line.strip() == "flutter:"),
+                   if line.rstrip("\r\n") == "flutter:"),
                   None
               )
               if flutter_index is None:
