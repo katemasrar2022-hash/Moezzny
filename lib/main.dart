@@ -6,6 +6,7 @@ import 'package:egyptian_prayer_times/egyptian_prayer_times.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'quran_page.dart';
 import 'qibla_page.dart';
+import 'adhan_settings_page.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -595,6 +596,13 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  void openAdhanSettings() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const AdhanSettingsPage()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Directionality(
@@ -926,6 +934,8 @@ class _HomePageState extends State<HomePage> {
                             openQuran();
                           } else if (item['title'] == 'القبلة') {
                             openQibla();
+                          } else if (item['title'] == 'التنبيهات') {
+                            openAdhanSettings();
                           } else {
                             message(
                               'قسم ${item['title']} سنعمل على تفعيله في الخطوات القادمة.',
