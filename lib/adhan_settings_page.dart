@@ -12,6 +12,8 @@ const Color _adhanPanel = Color(0xFF151F32);
 const Color _adhanGold = Color(0xFFE0B45C);
 const String _adhanLibraryKey = 'moezzny_adhan_audio_library_v1';
 const String _adhanSelectedKey = 'moezzny_selected_adhan_id';
+const String _bundledAdhanId = 'moezzny_bundled_adhan_cc0_v1';
+const String _bundledAdhanAsset = 'assets/adhan/default_adhan.ogg';
 
 class AdhanSettingsPage extends StatefulWidget {
   const AdhanSettingsPage({super.key});
@@ -55,11 +57,24 @@ class _AdhanSettingsPageState extends State<AdhanSettingsPage> {
         _sounds.clear();
       }
     }
-    _selectedId = prefs.getString(_adhanSelectedKey);
-    if (_selectedId != null &&
-        !_sounds.any((sound) => sound['id'] == _selectedId)) {
-      _selectedId = null;
+
+    if (!_sounds.any((sound) => sound['id'] == _bundledAdhanId)) {
+      _sounds.insert(0, {
+        'id': _bundledAdhanId,
+        'name': 'أذان افتراضي - تسجيل مجاني',
+        'source': 'asset',
+        'path': _bundledAdhanAsset,
+      });
+      await prefs.setString(_adhanLibraryKey, jsonEncode(_sounds));
     }
+
+    _selectedId = prefs.getString(_adhanSelectedKey);
+    if (_selectedId == null ||
+        !_sounds.any((sound) => sound['id'] == _selectedId)) {
+      _selectedId = _bundledAdhanId;
+      await prefs.setString(_adhanSelectedKey, _selectedId!);
+    }
+
     if (mounted) setState(() => _loading = false);
   }
 
@@ -78,19 +93,25 @@ class _AdhanSettingsPageState extends State<AdhanSettingsPage> {
       type: FileType.custom,
       allowedExtensions: ['mp3', 'm4a', 'aac', 'wav', 'ogg'],
     );
-    if (files.isEmpty) return;
 
-    final picked = files.single;
+    if (files == null || files.files.isEmpty) return;
+
+final picked = files.files.single;
     final sourcePath = picked.path;
+
     if (sourcePath == null) {
       _showMessage('تعذر الوصول إلى الملف المختار.');
       return;
     }
 
     setState(() => _busy = true);
+
     try {
       final appDirectory = await getApplicationDocumentsDirectory();
-      final audioDirectory = Directory('${appDirectory.path}/adhan_audio');
+      final audioDirectory = Directory(
+        '${appDirectory.path}/adhan_audio',
+      );
+
       if (!await audioDirectory.exists()) {
         await audioDirectory.create(recursive: true);
       }
@@ -98,16 +119,23 @@ class _AdhanSettingsPageState extends State<AdhanSettingsPage> {
       final extension = picked.extension ?? 'mp3';
       final id = DateTime.now().microsecondsSinceEpoch.toString();
       final destination = '${audioDirectory.path}/$id.$extension';
+
       await File(sourcePath).copy(destination);
 
-      final name = picked.name.replaceAll(RegExp(r'\.[^.]+$'), '');
+      final name = picked.name.replaceAll(
+        RegExp(r'\.[^.]+$'),
+        '',
+      );
+
       _sounds.add({
         'id': id,
         'name': name.isEmpty ? 'أذان من الهاتف' : name,
         'source': 'file',
         'path': destination,
       });
+
       await _saveSounds();
+
       if (mounted) setState(() {});
       _showMessage('تمت إضافة الصوت إلى مكتبتك.');
     } catch (error) {
@@ -136,7 +164,9 @@ class _AdhanSettingsPageState extends State<AdhanSettingsPage> {
               children: [
                 TextFormField(
                   controller: nameController,
-                  decoration: const InputDecoration(labelText: 'اسم الصوت'),
+                  decoration: const InputDecoration(
+                    labelText: 'اسم الصوت',
+                  ),
                   validator: (value) =>
                       value == null || value.trim().isEmpty
                           ? 'اكتب اسمًا للصوت'
@@ -184,22 +214,27 @@ class _AdhanSettingsPageState extends State<AdhanSettingsPage> {
     if (accepted == true) {
       final uri = Uri.parse(urlController.text.trim());
       final id = DateTime.now().microsecondsSinceEpoch.toString();
+
       _sounds.add({
         'id': id,
         'name': nameController.text.trim(),
         'source': 'url',
         'url': uri.toString(),
       });
+
       await _saveSounds();
+
       if (mounted) setState(() {});
       _showMessage('تم حفظ الرابط. شغّل الصوت للتأكد من صلاحيته.');
     }
+
     nameController.dispose();
     urlController.dispose();
   }
 
   Future<void> _togglePlayback(Map<String, String> sound) async {
     final id = sound['id']!;
+
     if (_playingId == id) {
       await _player.stop();
       if (mounted) setState(() => _playingId = null);
@@ -208,13 +243,19 @@ class _AdhanSettingsPageState extends State<AdhanSettingsPage> {
 
     try {
       await _player.stop();
+
       if (sound['source'] == 'file') {
         await _player.setFilePath(sound['path']!);
+      } else if (sound['source'] == 'asset') {
+        await _player.setAsset(sound['path']!);
       } else {
         await _player.setUrl(sound['url']!);
       }
+
       if (mounted) setState(() => _playingId = id);
+
       await _player.play();
+
       if (mounted && _playingId == id) {
         setState(() => _playingId = null);
       }
@@ -228,69 +269,183 @@ class _AdhanSettingsPageState extends State<AdhanSettingsPage> {
     setState(() => _selectedId = id);
     await _saveSounds();
     _showMessage('تم اختيار هذا الصوت كصوت الأذان الافتراضي.');
-  }
+  }  Future<void> _deleteSound(Map<String, String> sound) async {
+    final id = sound['id']!;
 
-  Future<void> _deleteSound(Map<String, String> sound) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          backgroundColor: _adhanPanel,
-          title: const Text('حذف الصوت؟'),
-          content: Text('سيتم حذف «${sound['name'] ?? ''}» من مكتبتك.'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('إلغاء'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('حذف'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (confirmed != true) return;
+    if (id == _bundledAdhanId) {
+      _showMessage('الصوت الافتراضي المدمج لا يمكن حذفه.');
+      return;
+    }
 
-    if (_playingId == sound['id']) {
+    if (_playingId == id) {
       await _player.stop();
       _playingId = null;
     }
+
     if (sound['source'] == 'file') {
-      final file = File(sound['path']!);
-      if (await file.exists()) await file.delete();
+      final path = sound['path'];
+      if (path != null) {
+        final file = File(path);
+        if (await file.exists()) {
+          await file.delete();
+        }
+      }
     }
-    _sounds.removeWhere((item) => item['id'] == sound['id']);
-    if (_selectedId == sound['id']) _selectedId = null;
+
+    _sounds.removeWhere((item) => item['id'] == id);
+
+    if (_selectedId == id) {
+      _selectedId = _bundledAdhanId;
+    }
+
     await _saveSounds();
+
     if (mounted) setState(() {});
+    _showMessage('تم حذف الصوت.');
   }
 
   void _showMessage(String message) {
     if (!mounted) return;
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message, textDirection: TextDirection.rtl),
+        content: Text(message),
         backgroundColor: _adhanPanel,
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }
 
-  Widget _addButton({
+  Widget _buildSoundCard(Map<String, String> sound) {
+    final id = sound['id']!;
+    final selected = id == _selectedId;
+    final playing = id == _playingId;
+    final bundled = id == _bundledAdhanId;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _adhanPanel,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: selected ? _adhanGold : Colors.white12,
+          width: selected ? 1.5 : 1,
+        ),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: _adhanGold.withValues(alpha: 0.13),
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: const Icon(
+                  Icons.volume_up_rounded,
+                  color: _adhanGold,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      sound['name'] ?? 'صوت أذان',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      bundled
+                          ? 'صوت افتراضي'
+                          : sound['source'] == 'url'
+                              ? 'من الإنترنت'
+                              : 'من الهاتف',
+                      style: const TextStyle(
+                        color: Colors.white60,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (selected)
+                const Icon(
+                  Icons.check_circle,
+                  color: _adhanGold,
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _busy ? null : () => _togglePlayback(sound),
+                  icon: Icon(
+                    playing ? Icons.stop : Icons.play_arrow,
+                  ),
+                  label: Text(playing ? 'إيقاف' : 'استماع'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _adhanGold,
+                    side: const BorderSide(color: _adhanGold),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: selected ? null : () => _selectSound(id),
+                  icon: const Icon(Icons.check),
+                  label: const Text('اختيار'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _adhanGold,
+                    foregroundColor: _adhanNavy,
+                    disabledBackgroundColor: Colors.white12,
+                    disabledForegroundColor: Colors.white54,
+                  ),
+                ),
+              ),
+              if (!bundled) ...[
+                const SizedBox(width: 4),
+                IconButton(
+                  onPressed: () => _deleteSound(sound),
+                  icon: const Icon(
+                    Icons.delete_outline,
+                    color: Colors.redAccent,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAddButton({
     required IconData icon,
-    required String label,
+    required String title,
     required VoidCallback onPressed,
   }) {
-    return OutlinedButton.icon(
-      onPressed: _busy ? null : onPressed,
-      icon: Icon(icon, color: _adhanGold),
-      label: Text(label),
-      style: OutlinedButton.styleFrom(
-        foregroundColor: Colors.white,
-        side: BorderSide(color: _adhanGold.withValues(alpha: 0.5)),
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+    return Expanded(
+      child: OutlinedButton.icon(
+        onPressed: _busy ? null : onPressed,
+        icon: Icon(icon),
+        label: Text(title),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: _adhanGold,
+          side: const BorderSide(color: _adhanGold),
+          padding: const EdgeInsets.symmetric(vertical: 13),
+        ),
       ),
     );
   }
@@ -304,187 +459,102 @@ class _AdhanSettingsPageState extends State<AdhanSettingsPage> {
         appBar: AppBar(
           backgroundColor: _adhanNavy,
           foregroundColor: Colors.white,
-          centerTitle: true,
-          title: const Text('أصوات الأذان'),
+          elevation: 0,
+          title: const Text(
+            'أصوات الأذان',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
         ),
         body: _loading
-            ? const Center(child: CircularProgressIndicator(color: _adhanGold))
-            : ListView(
-                padding: const EdgeInsets.all(18),
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      color: _adhanPanel,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: _adhanGold.withValues(alpha: 0.3),
-                      ),
-                    ),
-                    child: const Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'مكتبة أذانك',
-                          style: TextStyle(
-                            color: _adhanGold,
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        SizedBox(height: 8),
-                        Text(
-                          'أضف ملفات الأذان من هاتفك أو رابط MP3 مباشر، واستمع إليها قبل اختيار الصوت الافتراضي. في هذه المرحلة لن يعمل الأذان تلقائيًا عند الصلاة.',
-                          style: TextStyle(
-                            color: Colors.white70,
-                            height: 1.7,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _addButton(
-                          icon: Icons.phone_android_rounded,
-                          label: 'من الهاتف',
-                          onPressed: _addFromPhone,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _addButton(
-                          icon: Icons.link_rounded,
-                          label: 'من رابط',
-                          onPressed: _addFromUrl,
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (_busy) ...[
-                    const SizedBox(height: 14),
-                    const LinearProgressIndicator(color: _adhanGold),
-                  ],
-                  const SizedBox(height: 22),
-                  const Text(
-                    'الأصوات المضافة',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  if (_sounds.isEmpty)
+            ? const Center(
+                child: CircularProgressIndicator(
+                  color: _adhanGold,
+                ),
+              )
+            : SafeArea(
+                child: ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
                     Container(
-                      padding: const EdgeInsets.all(20),
+                      padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
                         color: _adhanPanel,
                         borderRadius: BorderRadius.circular(18),
                       ),
-                      child: const Text(
-                        'لم تضف أصواتًا بعد. اختر ملف أذان من هاتفك أو أضف رابطًا مباشرًا.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.white70,
-                          height: 1.7,
-                        ),
-                      ),
-                    ),
-                  ..._sounds.map((sound) {
-                    final id = sound['id']!;
-                    final selected = _selectedId == id;
-                    final playing = _playingId == id;
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 10),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: _adhanPanel,
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(
-                          color: selected ? _adhanGold : Colors.white12,
-                        ),
-                      ),
-                      child: Row(
+                      child: const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          IconButton(
-                            tooltip: playing ? 'إيقاف' : 'استماع',
-                            onPressed: () => _togglePlayback(sound),
-                            icon: Icon(
-                              playing
-                                  ? Icons.stop_circle
-                                  : Icons.play_circle,
-                              color: _adhanGold,
-                              size: 34,
+                          Icon(
+                            Icons.mosque_rounded,
+                            color: _adhanGold,
+                            size: 34,
+                          ),
+                          SizedBox(height: 12),
+                          Text(
+                            'اختر صوت الأذان',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 19,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  sound['name'] ?? 'صوت أذان',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  sound['source'] == 'file'
-                                      ? 'ملف محفوظ على الجهاز'
-                                      : 'رابط من الإنترنت',
-                                  style: const TextStyle(
-                                    color: Colors.white54,
-                                    fontSize: 11,
-                                  ),
-                                ),
-                                if (selected)
-                                  const Text(
-                                    'الصوت الافتراضي',
-                                    style: TextStyle(
-                                      color: _adhanGold,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                          IconButton(
-                            tooltip: selected ? 'محدد' : 'اختيار افتراضي',
-                            onPressed: selected ? null : () => _selectSound(id),
-                            icon: Icon(
-                              selected
-                                  ? Icons.check_circle
-                                  : Icons.radio_button_unchecked,
-                              color: _adhanGold,
-                            ),
-                          ),
-                          IconButton(
-                            tooltip: 'حذف',
-                            onPressed: () => _deleteSound(sound),
-                            icon: const Icon(
-                              Icons.delete_outline,
-                              color: Colors.white54,
+                          SizedBox(height: 7),
+                          Text(
+                            'أضف أصواتك المفضلة، واستمع إليها، '
+                            'واختر الصوت الذي تريد استخدامه.',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              height: 1.6,
                             ),
                           ),
                         ],
                       ),
-                    );
-                  }),
-                  const SizedBox(height: 10),
-                  const Text(
-                    'يمكنك إضافة تسجيلات الأذان المصري أو الحرم المكي أو المسجد النبوي أو غيرها عند توفر ملفات تملك حق استخدامها. لم نضمّن تسجيلات غير موثقة الحقوق.',
-                    style: TextStyle(
-                      color: Colors.white54,
-                      height: 1.6,
-                      fontSize: 12,
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 20),
+                    const Text(
+                      'مكتبة الأصوات',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    ..._sounds.map(_buildSoundCard),
+                    const SizedBox(height: 12),
+                    if (_busy)
+                      const Center(
+                        child: CircularProgressIndicator(
+                          color: _adhanGold,
+                        ),
+                      ),
+                    Row(
+                      children: [
+                        _buildAddButton(
+                          icon: Icons.phone_android,
+                          title: 'من الهاتف',
+                          onPressed: _addFromPhone,
+                        ),
+                        const SizedBox(width: 10),
+                        _buildAddButton(
+                          icon: Icons.link,
+                          title: 'من رابط',
+                          onPressed: _addFromUrl,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      'ملحوظة: يجب أن يكون الرابط مباشرًا لملف صوت '
+                      'وليس رابط صفحة ويب.',
+                      style: TextStyle(
+                        color: Colors.white54,
+                        fontSize: 12,
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
               ),
       ),
     );
