@@ -1,12 +1,16 @@
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:egyptian_prayer_times/egyptian_prayer_times.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import 'quran_page.dart';
 import 'qibla_page.dart';
 import 'adhan_settings_page.dart';
+import 'prayer_notification_service.dart';
+import 'prayer_notification_settings_page.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -355,6 +359,8 @@ class _HomePageState extends State<HomePage> {
   double? longitude;
 
   Timer? prayerTimer;
+  bool _notificationServiceReady = false;
+  bool _schedulingNotifications = false;
 
   final List<Map<String, dynamic>> features = [
     {
@@ -385,7 +391,7 @@ class _HomePageState extends State<HomePage> {
     {
       'icon': Icons.notifications_active_rounded,
       'title': 'التنبيهات',
-      'sub': 'إعدادات الأذان',
+      'sub': 'إعدادات الأذان والإقامة',
     },
   ];
 
@@ -393,12 +399,26 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
 
+    _initializeNotifications();
     loadPrayerTimes();
 
     prayerTimer = Timer.periodic(
       const Duration(minutes: 1),
       (_) => refreshPrayerTimes(),
     );
+  }
+
+  Future<void> _initializeNotifications() async {
+    try {
+      await PrayerNotificationService.instance.initialize();
+      _notificationServiceReady = true;
+
+      if (mounted && prayerTimes != null) {
+        await _schedulePrayerNotifications();
+      }
+    } catch (error) {
+      debugPrint('MOEZZNY NOTIFICATION INIT ERROR: $error');
+    }
   }
 
   @override
@@ -517,6 +537,10 @@ class _HomePageState extends State<HomePage> {
         loadingPrayerTimes = false;
         locationMessage = 'تم تحديد موقعك وحساب المواقيت بنجاح';
       });
+
+      if (_notificationServiceReady) {
+        _schedulePrayerNotifications();
+      }
     } catch (e, stackTrace) {
       debugPrint('MOEZZNY PRAYER ERROR: $e');
       debugPrint('MOEZZNY PRAYER STACK: $stackTrace');
@@ -524,6 +548,58 @@ class _HomePageState extends State<HomePage> {
       updateLocationMessage(
         'حدث خطأ أثناء حساب مواقيت الصلاة.',
       );
+    }
+  }
+
+  Future<void> _schedulePrayerNotifications() async {
+    if (_schedulingNotifications ||
+        !_notificationServiceReady ||
+        latitude == null ||
+        longitude == null) {
+      return;
+    }
+
+    _schedulingNotifications = true;
+
+    try {
+      final calculator = PrayerCalculator.withLocalTimezone(
+        latitude: latitude!,
+        longitude: longitude!,
+        asrMethod: AsrMethod.standard,
+      );
+
+      final now = DateTime.now();
+      final today = calculator.calculate(now);
+      final tomorrow = calculator.calculate(
+        now.add(const Duration(days: 1)),
+      );
+
+      await PrayerNotificationService.instance
+          .schedulePrayerNotifications(
+        prayerTimes: {
+          'fajr': today.fajr,
+          'dhuhr': today.dhuhr,
+          'asr': today.asr,
+          'maghrib': today.maghrib,
+          'isha': today.isha,
+        },
+      );
+
+      await PrayerNotificationService.instance
+          .schedulePrayerNotifications(
+        prayerTimes: {
+          'fajr': tomorrow.fajr,
+          'dhuhr': tomorrow.dhuhr,
+          'asr': tomorrow.asr,
+          'maghrib': tomorrow.maghrib,
+          'isha': tomorrow.isha,
+        },
+      );
+    } catch (error, stackTrace) {
+      debugPrint('MOEZZNY NOTIFICATION SCHEDULE ERROR: $error');
+      debugPrint('MOEZZNY NOTIFICATION STACK: $stackTrace');
+    } finally {
+      _schedulingNotifications = false;
     }
   }
 
@@ -603,6 +679,19 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Future<void> openPrayerNotificationSettings() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const PrayerNotificationSettingsPage(),
+      ),
+    );
+
+    if (!mounted) return;
+
+    await _schedulePrayerNotifications();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Directionality(
@@ -657,9 +746,7 @@ class _HomePageState extends State<HomePage> {
                         ),
                       ),
                       IconButton(
-                        onPressed: () => message(
-                          'إعدادات التنبيهات والأذان ستُفعّل في مرحلة لاحقة.',
-                        ),
+                        onPressed: openPrayerNotificationSettings,
                         icon: const Icon(
                           Icons.notifications_none_rounded,
                           color: gold,
@@ -935,7 +1022,7 @@ class _HomePageState extends State<HomePage> {
                           } else if (item['title'] == 'القبلة') {
                             openQibla();
                           } else if (item['title'] == 'التنبيهات') {
-                            openAdhanSettings();
+                            openPrayerNotificationSettings();
                           } else {
                             message(
                               'قسم ${item['title']} سنعمل على تفعيله في الخطوات القادمة.',
@@ -1001,7 +1088,7 @@ class _HomePageState extends State<HomePage> {
             } else if (index == 2) {
               openAdhkar();
             } else if (index == 3) {
-              message('الإعدادات');
+              openAdhanSettings();
             }
           },
           destinations: const [
