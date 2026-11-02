@@ -123,6 +123,10 @@ jobs:
         working-directory: extracted
         run: flutter pub add flutter_local_notifications timezone flutter_timezone
 
+      - name: Add adhan audio packages
+        working-directory: extracted
+        run: flutter pub add just_audio file_picker path_provider
+
       - name: Add location and notification permissions
         working-directory: extracted
         shell: bash
