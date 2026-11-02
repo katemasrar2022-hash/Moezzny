@@ -1,4 +1,3 @@
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
@@ -66,6 +65,10 @@ class PrayerNotificationService {
   };
 
   bool _initialized = false;
+
+  // يمنع إلغاء وإعادة جدولة نفس التنبيه كل دقيقة.
+  // يتغير البصمة تلقائيًا لو تغير الموعد أو إعدادات الصلاة.
+  final Map<String, String> _scheduledFingerprints = {};
 
   Future<void> initialize() async {
     if (_initialized) return;
@@ -171,6 +174,10 @@ class PrayerNotificationService {
     return _adhanId(prayerKey, date) + 1;
   }
 
+  String _dateKey(String prayerKey, DateTime date) {
+    return '${prayerKey}_${date.year}_${date.month}_${date.day}';
+  }
+
   Future<void> cancelPrayerNotifications() async {
     await initialize();
 
@@ -186,6 +193,10 @@ class PrayerNotificationService {
 
         await _plugin.cancel(
           id: _iqamaId(prayer, date),
+        );
+
+        _scheduledFingerprints.remove(
+          _dateKey(prayer, date),
         );
       }
     }
@@ -206,7 +217,21 @@ class PrayerNotificationService {
 
       final adhanId = _adhanId(prayerKey, prayerTime);
       final iqamaId = _iqamaId(prayerKey, prayerTime);
+      final dateKey = _dateKey(prayerKey, prayerTime);
 
+      final fingerprint = [
+        prayerTime.millisecondsSinceEpoch,
+        settings.adhanEnabled,
+        settings.iqamaEnabled,
+        settings.iqamaMinutes,
+      ].join('|');
+
+      // نفس الموعد ونفس الإعدادات؟ لا نكرر الجدولة.
+      if (_scheduledFingerprints[dateKey] == fingerprint) {
+        continue;
+      }
+
+      // لو الموعد أو الإعدادات اتغيرت، نلغي القديم فقط.
       await _plugin.cancel(id: adhanId);
       await _plugin.cancel(id: iqamaId);
 
@@ -233,6 +258,8 @@ class PrayerNotificationService {
           );
         }
       }
+
+      _scheduledFingerprints[dateKey] = fingerprint;
     }
   }
 
@@ -287,4 +314,3 @@ class PrayerNotificationService {
     }
   }
 }
-
