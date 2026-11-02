@@ -346,30 +346,58 @@ class _AdhanSettingsPageState extends State<AdhanSettingsPage> {
 
   Future<void> _deleteSound(
     Map<String, String> sound,
-  ) async {
-    final id = sound['id']!;
+  Future<void> _togglePlayback(
+  Map<String, String> sound,
+) async {
+  final id = sound['id']!;
 
-    if (id == _bundledAdhanId) {
-      _showMessage('الصوت الافتراضي المدمج لا يمكن حذفه.');
-      return;
+  if (_playingId == id) {
+    await _player.stop();
+
+    if (mounted) {
+      setState(() => _playingId = null);
     }
 
-    if (_playingId == id) {
-      await _player.stop();
-      _playingId = null;
-    }
+    return;
+  }
+
+  try {
+    await _player.stop();
 
     if (sound['source'] == 'file') {
-      final path = sound['path'];
+      final path = sound['path']!;
 
-      if (path != null) {
-        final file = File(path);
-
-        if (await file.exists()) {
-          await file.delete();
-        }
+      if (!await File(path).exists()) {
+        throw Exception('ملف الصوت غير موجود: $path');
       }
+
+      await _player.setFilePath(path);
+    } else if (sound['source'] == 'asset') {
+      await _player.setAsset(_bundledAdhanAsset);
+    } else {
+      await _player.setUrl(sound['url']!);
     }
+
+    if (mounted) {
+      setState(() => _playingId = id);
+    }
+
+    await _player.play();
+
+    if (mounted && _playingId == id) {
+      setState(() => _playingId = null);
+    }
+  } catch (error, stackTrace) {
+    debugPrint('ADHAN PLAYBACK ERROR: $error');
+    debugPrintStack(stackTrace: stackTrace);
+
+    if (mounted) {
+      setState(() => _playingId = null);
+    }
+
+    _showMessage('خطأ تشغيل الأذان: $error');
+  }
+}
 
     _sounds.removeWhere(
       (item) => item['id'] == id,
