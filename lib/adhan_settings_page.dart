@@ -61,7 +61,8 @@ class _AdhanSettingsPageState extends State<AdhanSettingsPage> {
               (item) => Map<String, String>.from(item as Map),
             ),
           );
-      } catch (_) {
+      } catch (error) {
+        debugPrint('ADHAN LIBRARY LOAD ERROR: $error');
         _sounds.clear();
       }
     }
@@ -73,25 +74,19 @@ class _AdhanSettingsPageState extends State<AdhanSettingsPage> {
         'source': 'asset',
         'path': _bundledAdhanAsset,
       });
-
-      await prefs.setString(
-        _adhanLibraryKey,
-        jsonEncode(_sounds),
-      );
     } else {
-      // تحديث مسار الصوت الافتراضي إذا كان محفوظًا بالمسار القديم.
       final bundledIndex = _sounds.indexWhere(
         (sound) => sound['id'] == _bundledAdhanId,
       );
 
       _sounds[bundledIndex]['path'] = _bundledAdhanAsset;
       _sounds[bundledIndex]['source'] = 'asset';
-
-      await prefs.setString(
-        _adhanLibraryKey,
-        jsonEncode(_sounds),
-      );
     }
+
+    await prefs.setString(
+      _adhanLibraryKey,
+      jsonEncode(_sounds),
+    );
 
     _selectedId = prefs.getString(_adhanSelectedKey);
 
@@ -160,8 +155,7 @@ class _AdhanSettingsPageState extends State<AdhanSettingsPage> {
       final extension = picked.extension ?? 'mp3';
       final id = DateTime.now().microsecondsSinceEpoch.toString();
 
-      final destination =
-          '${audioDirectory.path}/$id.$extension';
+      final destination = '${audioDirectory.path}/$id.$extension';
 
       await File(sourcePath).copy(destination);
 
@@ -182,7 +176,9 @@ class _AdhanSettingsPageState extends State<AdhanSettingsPage> {
       if (mounted) setState(() {});
 
       _showMessage('تمت إضافة الصوت إلى مكتبتك.');
-    } catch (error) {
+    } catch (error, stackTrace) {
+      debugPrint('ADHAN ADD FILE ERROR: $error');
+      debugPrintStack(stackTrace: stackTrace);
       _showMessage('تعذرت إضافة الملف: $error');
     } finally {
       if (mounted) {
@@ -307,9 +303,15 @@ class _AdhanSettingsPageState extends State<AdhanSettingsPage> {
       await _player.stop();
 
       if (sound['source'] == 'file') {
-        await _player.setFilePath(sound['path']!);
+        final path = sound['path']!;
+
+        if (!await File(path).exists()) {
+          throw Exception('ملف الصوت غير موجود: $path');
+        }
+
+        await _player.setFilePath(path);
       } else if (sound['source'] == 'asset') {
-        await _player.setAsset(sound['path']!);
+        await _player.setAsset(_bundledAdhanAsset);
       } else {
         await _player.setUrl(sound['url']!);
       }
@@ -323,14 +325,15 @@ class _AdhanSettingsPageState extends State<AdhanSettingsPage> {
       if (mounted && _playingId == id) {
         setState(() => _playingId = null);
       }
-    } catch (_) {
+    } catch (error, stackTrace) {
+      debugPrint('ADHAN PLAYBACK ERROR: $error');
+      debugPrintStack(stackTrace: stackTrace);
+
       if (mounted) {
         setState(() => _playingId = null);
       }
 
-      _showMessage(
-        'تعذر تشغيل الصوت. تحقق من الملف أو الرابط المباشر.',
-      );
+      _showMessage('خطأ تشغيل الأذان: $error');
     }
   }
 
@@ -346,58 +349,34 @@ class _AdhanSettingsPageState extends State<AdhanSettingsPage> {
 
   Future<void> _deleteSound(
     Map<String, String> sound,
-  Future<void> _togglePlayback(
-  Map<String, String> sound,
-) async {
-  final id = sound['id']!;
+  ) async {
+    final id = sound['id']!;
 
-  if (_playingId == id) {
-    await _player.stop();
+    if (id == _bundledAdhanId) return;
 
-    if (mounted) {
-      setState(() => _playingId = null);
+    if (_playingId == id) {
+      await _player.stop();
+
+      if (mounted) {
+        setState(() => _playingId = null);
+      }
     }
-
-    return;
-  }
-
-  try {
-    await _player.stop();
 
     if (sound['source'] == 'file') {
-      final path = sound['path']!;
+      final path = sound['path'];
 
-      if (!await File(path).exists()) {
-        throw Exception('ملف الصوت غير موجود: $path');
+      if (path != null) {
+        try {
+          final file = File(path);
+
+          if (await file.exists()) {
+            await file.delete();
+          }
+        } catch (error) {
+          debugPrint('ADHAN DELETE FILE ERROR: $error');
+        }
       }
-
-      await _player.setFilePath(path);
-    } else if (sound['source'] == 'asset') {
-      await _player.setAsset(_bundledAdhanAsset);
-    } else {
-      await _player.setUrl(sound['url']!);
     }
-
-    if (mounted) {
-      setState(() => _playingId = id);
-    }
-
-    await _player.play();
-
-    if (mounted && _playingId == id) {
-      setState(() => _playingId = null);
-    }
-  } catch (error, stackTrace) {
-    debugPrint('ADHAN PLAYBACK ERROR: $error');
-    debugPrintStack(stackTrace: stackTrace);
-
-    if (mounted) {
-      setState(() => _playingId = null);
-    }
-
-    _showMessage('خطأ تشغيل الأذان: $error');
-  }
-}
 
     _sounds.removeWhere(
       (item) => item['id'] == id,
@@ -505,9 +484,7 @@ class _AdhanSettingsPageState extends State<AdhanSettingsPage> {
                       ? null
                       : () => _togglePlayback(sound),
                   icon: Icon(
-                    playing
-                        ? Icons.stop
-                        : Icons.play_arrow,
+                    playing ? Icons.stop : Icons.play_arrow,
                   ),
                   label: Text(
                     playing ? 'إيقاف' : 'استماع',
@@ -606,8 +583,7 @@ class _AdhanSettingsPageState extends State<AdhanSettingsPage> {
                         borderRadius: BorderRadius.circular(18),
                       ),
                       child: const Column(
-                        crossAxisAlignment:
-                            CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Icon(
                             Icons.mosque_rounded,
