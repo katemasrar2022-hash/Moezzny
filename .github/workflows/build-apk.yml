@@ -7,7 +7,7 @@ on:
       - "Moezzny_Flutter_Starter.zip"
       - "Moezzny-Quran-Assets.zip"
       - ".github/workflows/build-apk.yml"
-      - "lib/main.dart"
+      - "lib/**"
 
 permissions:
   contents: read
@@ -108,16 +108,16 @@ jobs:
       - name: Use repository source override
         shell: bash
         run: |
-          if [ -f lib/main.dart ]; then
-            cp lib/main.dart extracted/lib/main.dart
-            echo "Using repository lib/main.dart"
+          if compgen -G "lib/*.dart" > /dev/null; then
+            cp lib/*.dart extracted/lib/
+            echo "Using repository Dart sources"
           else
-            echo "No override found; using ZIP source"
+            echo "No repository Dart sources found; using ZIP source"
           fi
 
       - name: Add prayer and location packages
         working-directory: extracted
-        run: flutter pub add geolocator egyptian_prayer_times shared_preferences
+        run: flutter pub add geolocator egyptian_prayer_times shared_preferences flutter_compass
 
       - name: Add notification packages
         working-directory: extracted
