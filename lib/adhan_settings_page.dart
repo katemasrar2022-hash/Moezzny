@@ -5,15 +5,17 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 const String _bundledAdhanAsset = 'assets/adhan/default_adhan.mp3';
 
 const Color _adhanNavy = Color(0xFF0B1220);
 const Color _adhanPanel = Color(0xFF151F32);
 const Color _adhanGold = Color(0xFFE0B45C);
+
 const String _adhanLibraryKey = 'moezzny_adhan_audio_library_v1';
 const String _adhanSelectedKey = 'moezzny_selected_adhan_id';
 const String _bundledAdhanId = 'moezzny_bundled_adhan_cc0_v1';
-const String _bundledAdhanAsset = 'assets/adhan/default_adhan.ogg';
 
 class AdhanSettingsPage extends StatefulWidget {
   const AdhanSettingsPage({super.key});
@@ -25,8 +27,10 @@ class AdhanSettingsPage extends StatefulWidget {
 class _AdhanSettingsPageState extends State<AdhanSettingsPage> {
   final AudioPlayer _player = AudioPlayer();
   final List<Map<String, String>> _sounds = [];
+
   String? _selectedId;
   String? _playingId;
+
   bool _loading = true;
   bool _busy = false;
 
@@ -45,14 +49,18 @@ class _AdhanSettingsPageState extends State<AdhanSettingsPage> {
   Future<void> _loadSounds() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_adhanLibraryKey);
+
     if (raw != null) {
       try {
         final decoded = jsonDecode(raw) as List<dynamic>;
+
         _sounds
           ..clear()
-          ..addAll(decoded.map(
-            (item) => Map<String, String>.from(item as Map),
-          ));
+          ..addAll(
+            decoded.map(
+              (item) => Map<String, String>.from(item as Map),
+            ),
+          );
       } catch (_) {
         _sounds.clear();
       }
@@ -65,26 +73,58 @@ class _AdhanSettingsPageState extends State<AdhanSettingsPage> {
         'source': 'asset',
         'path': _bundledAdhanAsset,
       });
-      await prefs.setString(_adhanLibraryKey, jsonEncode(_sounds));
+
+      await prefs.setString(
+        _adhanLibraryKey,
+        jsonEncode(_sounds),
+      );
+    } else {
+      // تحديث مسار الصوت الافتراضي إذا كان محفوظًا بالمسار القديم.
+      final bundledIndex = _sounds.indexWhere(
+        (sound) => sound['id'] == _bundledAdhanId,
+      );
+
+      _sounds[bundledIndex]['path'] = _bundledAdhanAsset;
+      _sounds[bundledIndex]['source'] = 'asset';
+
+      await prefs.setString(
+        _adhanLibraryKey,
+        jsonEncode(_sounds),
+      );
     }
 
     _selectedId = prefs.getString(_adhanSelectedKey);
+
     if (_selectedId == null ||
         !_sounds.any((sound) => sound['id'] == _selectedId)) {
       _selectedId = _bundledAdhanId;
-      await prefs.setString(_adhanSelectedKey, _selectedId!);
+
+      await prefs.setString(
+        _adhanSelectedKey,
+        _selectedId!,
+      );
     }
 
-    if (mounted) setState(() => _loading = false);
+    if (mounted) {
+      setState(() => _loading = false);
+    }
   }
 
   Future<void> _saveSounds() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_adhanLibraryKey, jsonEncode(_sounds));
+
+    await prefs.setString(
+      _adhanLibraryKey,
+      jsonEncode(_sounds),
+    );
+
     if (_selectedId == null) {
       await prefs.remove(_adhanSelectedKey);
     } else {
-      await prefs.setString(_adhanSelectedKey, _selectedId!);
+      await prefs.setString(
+        _adhanSelectedKey,
+        _selectedId!,
+      );
     }
   }
 
@@ -94,9 +134,9 @@ class _AdhanSettingsPageState extends State<AdhanSettingsPage> {
       allowedExtensions: ['mp3', 'm4a', 'aac', 'wav', 'ogg'],
     );
 
-    if (files == null || files.files.isEmpty) return;
+    if (files == null || files.isEmpty) return;
 
-final picked = files.files.single;
+    final picked = files.single;
     final sourcePath = picked.path;
 
     if (sourcePath == null) {
@@ -108,6 +148,7 @@ final picked = files.files.single;
 
     try {
       final appDirectory = await getApplicationDocumentsDirectory();
+
       final audioDirectory = Directory(
         '${appDirectory.path}/adhan_audio',
       );
@@ -118,7 +159,9 @@ final picked = files.files.single;
 
       final extension = picked.extension ?? 'mp3';
       final id = DateTime.now().microsecondsSinceEpoch.toString();
-      final destination = '${audioDirectory.path}/$id.$extension';
+
+      final destination =
+          '${audioDirectory.path}/$id.$extension';
 
       await File(sourcePath).copy(destination);
 
@@ -137,11 +180,14 @@ final picked = files.files.single;
       await _saveSounds();
 
       if (mounted) setState(() {});
+
       _showMessage('تمت إضافة الصوت إلى مكتبتك.');
     } catch (error) {
       _showMessage('تعذرت إضافة الملف: $error');
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() => _busy = false);
+      }
     }
   }
 
@@ -181,12 +227,17 @@ final picked = files.files.single;
                     hintText: 'https://example.com/adhan.mp3',
                   ),
                   validator: (value) {
-                    final uri = Uri.tryParse((value ?? '').trim());
+                    final uri = Uri.tryParse(
+                      (value ?? '').trim(),
+                    );
+
                     if (uri == null ||
-                        (uri.scheme != 'https' && uri.scheme != 'http') ||
+                        (uri.scheme != 'https' &&
+                            uri.scheme != 'http') ||
                         uri.host.isEmpty) {
                       return 'أدخل رابط HTTP أو HTTPS صحيحًا';
                     }
+
                     return null;
                   },
                 ),
@@ -195,7 +246,9 @@ final picked = files.files.single;
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
+              onPressed: () {
+                Navigator.pop(dialogContext, false);
+              },
               child: const Text('إلغاء'),
             ),
             ElevatedButton(
@@ -225,19 +278,28 @@ final picked = files.files.single;
       await _saveSounds();
 
       if (mounted) setState(() {});
-      _showMessage('تم حفظ الرابط. شغّل الصوت للتأكد من صلاحيته.');
+
+      _showMessage(
+        'تم حفظ الرابط. شغّل الصوت للتأكد من صلاحيته.',
+      );
     }
 
     nameController.dispose();
     urlController.dispose();
   }
 
-  Future<void> _togglePlayback(Map<String, String> sound) async {
+  Future<void> _togglePlayback(
+    Map<String, String> sound,
+  ) async {
     final id = sound['id']!;
 
     if (_playingId == id) {
       await _player.stop();
-      if (mounted) setState(() => _playingId = null);
+
+      if (mounted) {
+        setState(() => _playingId = null);
+      }
+
       return;
     }
 
@@ -252,7 +314,9 @@ final picked = files.files.single;
         await _player.setUrl(sound['url']!);
       }
 
-      if (mounted) setState(() => _playingId = id);
+      if (mounted) {
+        setState(() => _playingId = id);
+      }
 
       await _player.play();
 
@@ -260,16 +324,29 @@ final picked = files.files.single;
         setState(() => _playingId = null);
       }
     } catch (_) {
-      if (mounted) setState(() => _playingId = null);
-      _showMessage('تعذر تشغيل الصوت. تحقق من الملف أو الرابط المباشر.');
+      if (mounted) {
+        setState(() => _playingId = null);
+      }
+
+      _showMessage(
+        'تعذر تشغيل الصوت. تحقق من الملف أو الرابط المباشر.',
+      );
     }
   }
 
   Future<void> _selectSound(String id) async {
     setState(() => _selectedId = id);
+
     await _saveSounds();
-    _showMessage('تم اختيار هذا الصوت كصوت الأذان الافتراضي.');
-  }  Future<void> _deleteSound(Map<String, String> sound) async {
+
+    _showMessage(
+      'تم اختيار هذا الصوت كصوت الأذان الافتراضي.',
+    );
+  }
+
+  Future<void> _deleteSound(
+    Map<String, String> sound,
+  ) async {
     final id = sound['id']!;
 
     if (id == _bundledAdhanId) {
@@ -284,15 +361,19 @@ final picked = files.files.single;
 
     if (sound['source'] == 'file') {
       final path = sound['path'];
+
       if (path != null) {
         final file = File(path);
+
         if (await file.exists()) {
           await file.delete();
         }
       }
     }
 
-    _sounds.removeWhere((item) => item['id'] == id);
+    _sounds.removeWhere(
+      (item) => item['id'] == id,
+    );
 
     if (_selectedId == id) {
       _selectedId = _bundledAdhanId;
@@ -301,6 +382,7 @@ final picked = files.files.single;
     await _saveSounds();
 
     if (mounted) setState(() {});
+
     _showMessage('تم حذف الصوت.');
   }
 
@@ -316,7 +398,9 @@ final picked = files.files.single;
     );
   }
 
-  Widget _buildSoundCard(Map<String, String> sound) {
+  Widget _buildSoundCard(
+    Map<String, String> sound,
+  ) {
     final id = sound['id']!;
     final selected = id == _selectedId;
     final playing = id == _playingId;
@@ -389,21 +473,31 @@ final picked = files.files.single;
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: _busy ? null : () => _togglePlayback(sound),
+                  onPressed: _busy
+                      ? null
+                      : () => _togglePlayback(sound),
                   icon: Icon(
-                    playing ? Icons.stop : Icons.play_arrow,
+                    playing
+                        ? Icons.stop
+                        : Icons.play_arrow,
                   ),
-                  label: Text(playing ? 'إيقاف' : 'استماع'),
+                  label: Text(
+                    playing ? 'إيقاف' : 'استماع',
+                  ),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: _adhanGold,
-                    side: const BorderSide(color: _adhanGold),
+                    side: const BorderSide(
+                      color: _adhanGold,
+                    ),
                   ),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: selected ? null : () => _selectSound(id),
+                  onPressed: selected
+                      ? null
+                      : () => _selectSound(id),
                   icon: const Icon(Icons.check),
                   label: const Text('اختيار'),
                   style: ElevatedButton.styleFrom(
@@ -462,7 +556,9 @@ final picked = files.files.single;
           elevation: 0,
           title: const Text(
             'أصوات الأذان',
-            style: TextStyle(fontWeight: FontWeight.bold),
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ),
         body: _loading
@@ -482,7 +578,8 @@ final picked = files.files.single;
                         borderRadius: BorderRadius.circular(18),
                       ),
                       child: const Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        crossAxisAlignment:
+                            CrossAxisAlignment.start,
                         children: [
                           Icon(
                             Icons.mosque_rounded,
