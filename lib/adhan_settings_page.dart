@@ -5,7 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+const String _bundledAdhanAsset = 'assets/adhan/default_adhan.mp3';
 
 const Color _adhanNavy = Color(0xFF0B1220);
 const Color _adhanPanel = Color(0xFF151F32);
