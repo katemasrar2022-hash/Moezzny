@@ -74,13 +74,13 @@ class _AdhanSettingsPageState extends State<AdhanSettingsPage> {
   }
 
   Future<void> _addFromPhone() async {
-    final result = await FilePicker.platform.pickFiles(
+    final files = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['mp3', 'm4a', 'aac', 'wav', 'ogg'],
     );
-    if (result == null || result.files.isEmpty) return;
+    if (files.isEmpty) return;
 
-    final picked = result.files.single;
+    final picked = files.single;
     final sourcePath = picked.path;
     if (sourcePath == null) {
       _showMessage('تعذر الوصول إلى الملف المختار.');
