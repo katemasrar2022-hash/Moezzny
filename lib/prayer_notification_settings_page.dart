@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'prayer_notification_service.dart';
 
@@ -32,17 +31,27 @@ class _PrayerNotificationSettingsPageState
   }
 
   Future<void> _loadSettings() async {
-    await _service.initialize();
+    try {
+      await _service.initialize();
 
-    for (final key in PrayerNotificationService.prayerKeys) {
-      _settings[key] = await _service.loadSettings(key);
+      for (final key in PrayerNotificationService.prayerKeys) {
+        _settings[key] = await _service.loadSettings(key);
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+
+      setState(() {
+        _loading = false;
+      });
+
+      _showMessage('تعذر تحميل إعدادات التنبيهات: $error');
     }
-
-    if (!mounted) return;
-
-    setState(() {
-      _loading = false;
-    });
   }
 
   Future<bool> _ensurePermission() async {
@@ -59,10 +68,32 @@ class _PrayerNotificationSettingsPageState
     return granted;
   }
 
+  Future<bool> _ensureExactAlarmPermission() async {
+    final granted =
+        await _service.requestExactAlarmPermission();
+
+    if (!granted && mounted) {
+      _showMessage(
+        'إذن المنبهات الدقيقة غير مفعّل. '
+        'قد لا تصل التنبيهات في موعدها المحدد. '
+        'فعّل الإذن من إعدادات الهاتف ثم حاول مرة أخرى.',
+      );
+    }
+
+    return granted;
+  }
+
   Future<void> _updateSettings(
     String prayerKey,
     PrayerNotificationSettings updated,
   ) async {
+    if (_saving) return;
+
+    final oldSettings =
+        await _service.loadSettings(prayerKey);
+
+    if (!mounted) return;
+
     setState(() {
       _settings[prayerKey] = updated;
       _saving = true;
@@ -72,12 +103,22 @@ class _PrayerNotificationSettingsPageState
       final enabled = updated.adhanEnabled || updated.iqamaEnabled;
 
       if (enabled) {
-        final granted = await _ensurePermission();
+        final notificationGranted = await _ensurePermission();
 
-        if (!granted) {
-          final oldSettings =
-              await _service.loadSettings(prayerKey);
+        if (!notificationGranted) {
+          if (!mounted) return;
 
+          setState(() {
+            _settings[prayerKey] = oldSettings;
+          });
+
+          return;
+        }
+
+        final exactAlarmGranted =
+            await _ensureExactAlarmPermission();
+
+        if (!exactAlarmGranted) {
           if (!mounted) return;
 
           setState(() {
@@ -91,10 +132,17 @@ class _PrayerNotificationSettingsPageState
       await _service.saveSettings(prayerKey, updated);
 
       if (mounted) {
-        _showMessage('تم حفظ إعدادات صلاة ${PrayerNotificationService.prayerNames[prayerKey]}');
+        _showMessage(
+          'تم حفظ إعدادات صلاة '
+          '${PrayerNotificationService.prayerNames[prayerKey]}',
+        );
       }
     } catch (error) {
       if (mounted) {
+        setState(() {
+          _settings[prayerKey] = oldSettings;
+        });
+
         _showMessage('تعذر حفظ الإعدادات: $error');
       }
     } finally {
@@ -317,4 +365,3 @@ class _PrayerNotificationSettingsPageState
     );
   }
 }
-
