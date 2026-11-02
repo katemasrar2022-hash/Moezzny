@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:egyptian_prayer_times/egyptian_prayer_times.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -570,6 +572,15 @@ class _HomePageState extends State<HomePage> {
     await Geolocator.openAppSettings();
   }
 
+  void openQuran() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const QuranPage(),
+      ),
+    );
+  }
+
   void openAdhkar() {
     Navigator.push(
       context,
@@ -906,6 +917,8 @@ class _HomePageState extends State<HomePage> {
                         onTap: () {
                           if (item['title'] == 'الأذكار') {
                             openAdhkar();
+                          } else if (item['title'] == 'القرآن الكريم') {
+                            openQuran();
                           } else {
                             message(
                               'قسم ${item['title']} سنعمل على تفعيله في الخطوات القادمة.',
@@ -966,12 +979,12 @@ class _HomePageState extends State<HomePage> {
           onDestinationSelected: (index) {
             setState(() => selectedTab = index);
 
-            if (index == 2) {
+            if (index == 1) {
+              openQuran();
+            } else if (index == 2) {
               openAdhkar();
-            } else if (index != 0) {
-              message(
-                ['الرئيسية', 'القرآن الكريم', 'الأذكار', 'الإعدادات'][index],
-              );
+            } else if (index == 3) {
+              message('الإعدادات');
             }
           },
           destinations: const [
@@ -1036,6 +1049,285 @@ class PrayerItem extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+
+// ==================== القرآن الكريم ====================
+
+class QuranPage extends StatefulWidget {
+  const QuranPage({super.key});
+
+  @override
+  State<QuranPage> createState() => _QuranPageState();
+}
+
+class _QuranPageState extends State<QuranPage> {
+  List<Map<String, dynamic>> surahs = [];
+  bool loading = true;
+  String errorMessage = '';
+  String searchText = '';
+
+  @override
+  void initState() {
+    super.initState();
+    loadSurahs();
+  }
+
+  Future<void> loadSurahs() async {
+    try {
+      final raw = await rootBundle.loadString('assets/quran/surah-index.json');
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      final items = (decoded['surahs'] as List)
+          .map((item) => Map<String, dynamic>.from(item as Map))
+          .toList();
+      if (!mounted) return;
+      setState(() {
+        surahs = items;
+        loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        loading = false;
+        errorMessage = 'تعذر تحميل فهرس القرآن. تأكد من إضافة ملفات القرآن إلى assets/quran.';
+      });
+      debugPrint('MOEZZNY QURAN INDEX ERROR: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = surahs.where((surah) {
+      final name = (surah['name'] as String).toLowerCase();
+      final number = '${surah['number']}';
+      final query = searchText.trim().toLowerCase();
+      return query.isEmpty || name.contains(query) || number == query;
+    }).toList();
+
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: navy,
+        appBar: AppBar(
+          backgroundColor: navy,
+          foregroundColor: Colors.white,
+          centerTitle: true,
+          title: const Text('القرآن الكريم'),
+        ),
+        body: loading
+            ? const Center(child: CircularProgressIndicator(color: gold))
+            : errorMessage.isNotEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        errorMessage,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.white, height: 1.8),
+                      ),
+                    ),
+                  )
+                : Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                        child: TextField(
+                          textDirection: TextDirection.rtl,
+                          onChanged: (value) => setState(() => searchText = value),
+                          style: const TextStyle(color: Colors.white),
+                          decoration: InputDecoration(
+                            hintText: 'ابحث عن سورة أو اكتب رقمها',
+                            hintStyle: const TextStyle(color: muted),
+                            prefixIcon: const Icon(Icons.search, color: gold),
+                            filled: true,
+                            fillColor: panel,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+                          itemCount: filtered.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 8),
+                          itemBuilder: (context, index) {
+                            final surah = filtered[index];
+                            final number = surah['number'] as int;
+                            return Material(
+                              color: panel,
+                              borderRadius: BorderRadius.circular(16),
+                              child: ListTile(
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => QuranReaderPage(surah: surah),
+                                    ),
+                                  );
+                                },
+                                leading: Container(
+                                  width: 42,
+                                  height: 42,
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                    color: gold.withValues(alpha: 0.14),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    '$number',
+                                    style: const TextStyle(color: gold, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                                title: Text(
+                                  surah['name'] as String,
+                                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                ),
+                                subtitle: Text(
+                                  '${surah['ayahCount']} آية',
+                                  style: const TextStyle(color: muted, fontSize: 12),
+                                ),
+                                trailing: const Icon(Icons.chevron_left_rounded, color: gold),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+      ),
+    );
+  }
+}
+
+class QuranReaderPage extends StatefulWidget {
+  final Map<String, dynamic> surah;
+
+  const QuranReaderPage({super.key, required this.surah});
+
+  @override
+  State<QuranReaderPage> createState() => _QuranReaderPageState();
+}
+
+class _QuranReaderPageState extends State<QuranReaderPage> {
+  List<String> ayahs = [];
+  bool loading = true;
+  String errorMessage = '';
+
+  @override
+  void initState() {
+    super.initState();
+    loadAyahs();
+  }
+
+  Future<void> loadAyahs() async {
+    try {
+      final raw = await rootBundle.loadString('assets/quran/quran-uthmani.txt');
+      final allLines = const LineSplitter().convert(raw);
+      final start = (widget.surah['startLine'] as int) - 1;
+      final end = widget.surah['endLine'] as int;
+      if (start < 0 || end > allLines.length || start >= end) {
+        throw FormatException('Invalid surah line range');
+      }
+      if (!mounted) return;
+      setState(() {
+        ayahs = allLines.sublist(start, end);
+        loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        loading = false;
+        errorMessage = 'تعذر فتح السورة. تأكد من وجود ملف نص القرآن.';
+      });
+      debugPrint('MOEZZNY QURAN TEXT ERROR: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final name = widget.surah['name'] as String;
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: navy,
+        appBar: AppBar(
+          backgroundColor: navy,
+          foregroundColor: Colors.white,
+          centerTitle: true,
+          title: Text('سورة $name'),
+        ),
+        body: loading
+            ? const Center(child: CircularProgressIndicator(color: gold))
+            : errorMessage.isNotEmpty
+                ? Center(
+                    child: Text(errorMessage, style: const TextStyle(color: Colors.white)),
+                  )
+                : ListView(
+                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 32),
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+                        decoration: BoxDecoration(
+                          color: panel,
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(color: gold.withValues(alpha: 0.25)),
+                        ),
+                        child: Column(
+                          children: [
+                            Text(
+                              'سورة $name',
+                              style: const TextStyle(color: gold, fontSize: 22, fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              '${widget.surah['ayahCount']} آية',
+                              style: const TextStyle(color: muted),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      if ((widget.surah['number'] as int) != 1 &&
+                          (widget.surah['number'] as int) != 9)
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: 18),
+                          child: Text(
+                            'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: gold, fontSize: 23, height: 2),
+                          ),
+                        ),
+                      ...List.generate(ayahs.length, (index) {
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 14),
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                            decoration: BoxDecoration(
+                              color: panel,
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Text(
+                              '${ayahs[index]}  ﴿${index + 1}﴾',
+                              textAlign: TextAlign.justify,
+                              textDirection: TextDirection.rtl,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 22,
+                                height: 2.0,
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+      ),
     );
   }
 }
