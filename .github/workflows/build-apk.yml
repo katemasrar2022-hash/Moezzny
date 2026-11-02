@@ -1,3 +1,4 @@
+
 name: Moezzny Android Build
 
 on:
@@ -8,6 +9,7 @@ on:
       - "Moezzny-Quran-Assets.zip"
       - ".github/workflows/build-apk.yml"
       - "lib/**"
+      - "assets/adhan/**"
 
 permissions:
   contents: read
@@ -42,64 +44,83 @@ jobs:
           test -f extracted/pubspec.yaml
           echo "PROJECT_DIR=$GITHUB_WORKSPACE/extracted" >> "$GITHUB_ENV"
 
-      - name: Install offline Quran assets
+      - name: Install offline Quran and Adhan assets
         shell: bash
         run: |
           set -e
+
+          # Copy Quran assets
           test -f Moezzny-Quran-Assets.zip
           mkdir -p extracted/assets/quran
           unzip -o Moezzny-Quran-Assets.zip \
             'moezzny_quran_assets/assets/quran/*' \
             -d /tmp/moezzny-quran
+
           cp /tmp/moezzny-quran/moezzny_quran_assets/assets/quran/* \
             extracted/assets/quran/
 
+          # Copy default Adhan audio from repository
+          test -s assets/adhan/default_adhan.mp3
+          mkdir -p extracted/assets/adhan
+          cp assets/adhan/default_adhan.mp3 \
+            extracted/assets/adhan/default_adhan.mp3
+
+          # Register both asset folders in pubspec.yaml
           python3 - <<'PY'
           from pathlib import Path
 
           pubspec = Path("extracted/pubspec.yaml")
-          content = pubspec.read_text(encoding="utf-8")
+          lines = pubspec.read_text(encoding="utf-8").splitlines(keepends=True)
 
-          if "assets/quran/" not in content:
-              lines = content.splitlines(keepends=True)
-              # Match only the TOP-LEVEL flutter: key, not
-              # dependencies.flutter: or dev_dependencies.flutter:.
-              flutter_index = next(
-                  (i for i, line in enumerate(lines)
-                   if line.rstrip("\r\n") == "flutter:"),
-                  None
-              )
-              if flutter_index is None:
-                  raise SystemExit("Could not find flutter: section in pubspec.yaml")
+          flutter_index = next(
+              (i for i, line in enumerate(lines)
+               if line.rstrip("\r\n") == "flutter:"),
+              None
+          )
 
-              assets_index = next(
-                  (i for i in range(flutter_index + 1, len(lines))
-                   if lines[i].startswith("  assets:")),
-                  None
-              )
+          if flutter_index is None:
+              raise SystemExit("Could not find top-level flutter: section")
 
-              if assets_index is None:
-                  lines[flutter_index + 1:flutter_index + 1] = [
-                      "  assets:\n",
-                      "    - assets/quran/\n",
-                  ]
-              else:
-                  insert_index = assets_index + 1
-                  while insert_index < len(lines):
-                      line = lines[insert_index]
-                      if line.startswith("    - ") or not line.strip():
-                          insert_index += 1
-                      else:
-                          break
-                  lines.insert(insert_index, "    - assets/quran/\n")
+          assets_index = next(
+              (i for i in range(flutter_index + 1, len(lines))
+               if lines[i].startswith("  assets:")),
+              None
+          )
 
-              pubspec.write_text("".join(lines), encoding="utf-8")
+          if assets_index is None:
+              lines[flutter_index + 1:flutter_index + 1] = [
+                  "  assets:\n",
+                  "    - assets/quran/\n",
+                  "    - assets/adhan/default_adhan.mp3\n",
+              ]
+          else:
+              insert_index = assets_index + 1
+              while insert_index < len(lines):
+                  line = lines[insert_index]
+                  if line.startswith("    - ") or not line.strip():
+                      insert_index += 1
+                  else:
+                      break
 
-          print("Offline Quran assets copied and registered.")
+              existing = "".join(lines)
+              required_assets = [
+                  "    - assets/quran/\n",
+                  "    - assets/adhan/default_adhan.mp3\n",
+              ]
+
+              for asset in required_assets:
+                  if asset.strip() not in existing:
+                      lines.insert(insert_index, asset)
+                      insert_index += 1
+
+          pubspec.write_text("".join(lines), encoding="utf-8")
+
+          print("Quran and Adhan assets registered successfully.")
           PY
 
           test -s extracted/assets/quran/quran-uthmani.txt
           test -s extracted/assets/quran/surah-index.json
+          test -s extracted/assets/adhan/default_adhan.mp3
 
       - name: Generate Android platform
         working-directory: extracted
